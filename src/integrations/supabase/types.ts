@@ -677,6 +677,7 @@ export type Database = {
         | "operacao"
         | "gestao"
         | "bi_viewer"
+        | "gerencial"
       conciliation_status: "pendente" | "conciliado" | "divergente" | "ignorado"
       devis_status:
         | "rascunho"
@@ -684,11 +685,27 @@ export type Database = {
         | "aprovado"
         | "rejeitado"
         | "convertido"
+        | "reuniao_realizada"
+        | "proposta_em_geracao"
+        | "aguardando_validacao"
+        | "pronta_para_envio"
+        | "enviada_ao_cliente"
+        | "aguardando_aceite"
+        | "aceita"
+        | "rejeitada"
+        | "cobranca_pendente"
+        | "entrada_recebida"
+        | "enviado_para_operacao"
       entry_type: "receita" | "despesa" | "transferencia"
       import_status: "processando" | "concluido" | "erro" | "parcial"
       match_status: "sugerido" | "confirmado" | "rejeitado"
       match_type: "automatico" | "manual"
-      service_status: "pendente" | "em_andamento" | "concluido" | "cancelado"
+      service_status:
+        | "pendente"
+        | "em_andamento"
+        | "concluido"
+        | "cancelado"
+        | "a_iniciar"
       source_type:
         | "manual"
         | "importacao_planilha"
@@ -828,6 +845,7 @@ export const Constants = {
         "operacao",
         "gestao",
         "bi_viewer",
+        "gerencial",
       ],
       conciliation_status: ["pendente", "conciliado", "divergente", "ignorado"],
       devis_status: [
@@ -836,12 +854,29 @@ export const Constants = {
         "aprovado",
         "rejeitado",
         "convertido",
+        "reuniao_realizada",
+        "proposta_em_geracao",
+        "aguardando_validacao",
+        "pronta_para_envio",
+        "enviada_ao_cliente",
+        "aguardando_aceite",
+        "aceita",
+        "rejeitada",
+        "cobranca_pendente",
+        "entrada_recebida",
+        "enviado_para_operacao",
       ],
       entry_type: ["receita", "despesa", "transferencia"],
       import_status: ["processando", "concluido", "erro", "parcial"],
       match_status: ["sugerido", "confirmado", "rejeitado"],
       match_type: ["automatico", "manual"],
-      service_status: ["pendente", "em_andamento", "concluido", "cancelado"],
+      service_status: [
+        "pendente",
+        "em_andamento",
+        "concluido",
+        "cancelado",
+        "a_iniciar",
+      ],
       source_type: [
         "manual",
         "importacao_planilha",
