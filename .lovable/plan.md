@@ -1,85 +1,100 @@
 
 
-# Plano: Formatação BRL, status clicável e export PDF padrão Lundgaard Jensen
+# Plano atualizado: Botão "Enviar" + link de aceite no e-mail
 
-## 1. Formatação dos valores em BRL com pontos e vírgulas
+Mantém tudo do plano anterior (botão "Enviar ao cliente" só em `pronta_para_envio`, dialog com Para/Assunto/Mensagem, PDF anexo, status muda para `enviada_ao_cliente` após envio) e **acrescenta o link de aceite no corpo do e-mail**.
 
-**Problema:** No modal "Novo Devis" e na edição, os campos `Valor total` e `Valor de entrada` mostram `100000` e `50000.00` (puro). O usuário quer `100.000,00` e `50.000,00` no padrão pt-BR (ponto = milhar, vírgula = decimal).
+## Boa notícia: a infra de aceite já existe
 
-**Solução:** criar um componente `CurrencyInputBRL` em `src/components/ui/currency-input-brl.tsx` que:
-- Mostra o valor formatado como `100.000,00` enquanto o usuário digita
-- Internamente armazena o número (como string em centavos ou float) e expõe `value: number`
-- Aceita digitação livre (ignora não-dígitos, divide por 100 para definir os decimais)
+O projeto já tem:
+- Coluna `devis.accept_token` (UUID único, gerado automaticamente em cada devis)
+- Edge function pública `accept-devis-proposal` que aceita GET (preview) e POST (registra aceite)
+- Página `/aceitar-proposta/:token` (`AceitarProposta.tsx`) que mostra a proposta e tem o botão "Aceitar proposta"
+- Ao aceitar: registra `accepted_at`, IP, muda status para `cobranca_pendente`, cria cobrança financeira inicial (50%) e o serviço na Operação automaticamente
 
-Aplicar nos pontos onde hoje aparece `<Input type="number">` para valores monetários:
-- `src/pages/Comercial.tsx` → modal Novo Devis (Valor total, Valor de entrada)
-- `src/pages/DevisDetail.tsx` → edição (Valor total, Valor de entrada)
-- Qualquer outro form de Financeiro / Operação que use moeda (verificar e aplicar para consistência)
+Ou seja: **só precisamos colocar o link no e-mail**. Toda a mecânica de aceite já está pronta e funcionando — sem travas, sem login exigido, um clique e pronto.
 
-A leitura permanece com `fmtBRL()` (Intl pt-BR), que já está correta — só os **inputs** estão mostrando o número cru.
+## O que muda no plano
 
-## 2. Status alterável diretamente ao clicar (sem precisar abrir "Editar")
+### 1. Link de aceite no corpo do e-mail
 
-**Problema:** Em `/comercial/devis/:id`, o badge de status só vira `Select` quando o usuário aperta "Editar".
+A mensagem padrão passa a incluir um link destacado. Formato:
 
-**Solução em `src/pages/DevisDetail.tsx`:**
-- Substituir o badge somente-leitura por um **`Popover`** (ou `DropdownMenu`) clicável que mostra a lista de status disponíveis, com indicação de bloqueio (🔒) para os que exigem validação.
-- Ao escolher um novo status: chamar `supabase.from("devis").update({ status }).eq("id", id)` direto, exibir toast e invalidar queries — sem entrar no modo edição global.
-- Manter a regra `requiresValidation(status) && !devis.validated_at` → desabilitar a opção e mostrar tooltip "Valide a proposta antes".
-- Cursor `pointer` + hover sutil no badge para indicar que é clicável.
+```
+{ORIGIN}/aceitar-proposta/{accept_token}
+```
 
-(Opcional, mesma feature no Kanban: já funciona via drag — não mexer.)
+Onde `{ORIGIN}` é a URL pública do app (detectada automaticamente — `window.location.origin` no momento de envio, passada para a edge function).
 
-## 3. Exportar Devis em PDF no padrão do contrato Lundgaard Jensen
+### 2. Texto padrão atualizado (PT — exemplo)
 
-**Referência:** documento `DE202511065` em anexo — contrato bilíngue PT/FR com:
-- Cabeçalho com logo Lundgaard Jensen (mundo dourado) e título grande
-- Seções numeradas (I. Identificação, II. Objeto, escopo A/B/C com valores, III. Honorários, IV. Prazo)
-- Rodapé fixo: `Rua João Cordeiro, 831 – Praia de Iracema | +55 (85) 9 94066042 | +55 (85) 9 30379931` + paginação `Página X de Y`
-- Última página com bloco de assinatura: `LUNDGAARD JENSEN ADVOCACIA E CONSULTORIA INTERNACIONAL — CONTRATADO / LAW FIRM` + duas testemunhas (Nome / CPF / Assinatura)
-- Marca `lundgaardjensen.com | @lundgaard.jensen DE{numero}` no rodapé direito
+```
+Prezado(a) {nome_cliente},
 
-### Implementação
+Conforme conversado, segue em anexo a proposta de prestação de serviços
+da Lundgaard Jensen Advocacia e Consultoria Internacional, referente ao
+contrato {devis_number}.
 
-**a) Novo botão "Exportar PDF"** em `src/pages/DevisDetail.tsx` (cabeçalho, ao lado de "Editar"). Habilitado sempre.
+Para aceitar a proposta de forma rápida e segura, basta clicar no link
+abaixo:
 
-**b) Novo componente `src/components/devis/DevisPdfTemplate.tsx`** — uma página HTML/CSS estilizada (A4, margens, fontes serif para contrato), renderizada num container fora-da-tela (`position: absolute; left: -9999px`) que reproduz fielmente o template:
-- Cabeçalho com logo (`src/assets/logo-banner.png` já existe)
-- Título "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS" (ou versão FR/EN/ES baseada no idioma detectado, se houver — fallback PT)
-- Seção I — dados do cliente (nome, documento, endereço se disponível)
-- Seção I — dados fixos do contratado (Lundgaard Jensen completo, conforme o anexo)
-- Seção II — Objeto + parser do `proposal_structure` ou `scope_description` para listar itens A, B, C com valores em `BRL X.XXX,XX`
-- Seção III — Honorários (total + entrada 50%)
-- Seção IV — Prazo (deadline_date)
-- Rodapé com endereço/contatos + número `DE{ano}{mes}{seq}` (gerar a partir do `id` ou criar coluna `devis_number` — ver técnica abaixo)
-- Página final com assinaturas + testemunhas
+👉 ACEITAR PROPOSTA: {accept_url}
 
-**c) Geração do PDF** com `html2canvas` + `jspdf` (libs leves, client-side, sem dependência de servidor):
-- Adicionar via `npm` (já permitido)
-- Renderizar o template, capturar como canvas, gerar PDF A4 multipágina
-- Nome do arquivo: `Devis-{numero}-{cliente}.pdf`
+Permanecemos à disposição para esclarecer quaisquer dúvidas.
 
-**d) Numeração da Devis (`DE{AAAA}{MM}{NNN}`):**
-- Adicionar coluna `devis_number TEXT UNIQUE` em `public.devis` via migration
-- Trigger BEFORE INSERT que gera o número sequencial do mês: `'DE' || to_char(now(),'YYYYMM') || lpad(seq::text,3,'0')`
-- Para devis já existentes: backfill com base em `created_at`
-- Exibir o número no cabeçalho do detalhe e na lista
+Atenciosamente,
+Equipe Lundgaard Jensen
+lundgaardjensen.com
+```
 
-**e) Idioma do contrato:** se `proposal_structure` contém marcadores em FR/EN/ES (já gerados pela edge function `analyze-meeting-report`), o template detecta e troca os títulos das seções automaticamente (mapa pt→fr/en/es). Versão bilíngue (PT + FR lado a lado) fica para uma evolução futura — nesta entrega entregamos **um idioma por export**, escolhido automaticamente pelo conteúdo.
+Versões equivalentes em FR / EN / ES (mesmo detector de idioma já usado no PDF).
 
-## Arquivos afetados
+### 3. E-mail em HTML (não só texto plano)
 
-- **Criar:** `src/components/ui/currency-input-brl.tsx`
-- **Criar:** `src/components/devis/DevisPdfTemplate.tsx`
-- **Criar:** `src/lib/exportDevisPdf.ts` (helper html2canvas + jspdf)
-- **Editar:** `src/pages/Comercial.tsx` (usar CurrencyInputBRL no modal)
-- **Editar:** `src/pages/DevisDetail.tsx` (CurrencyInputBRL, status clicável via Popover, botão Exportar PDF, exibir devis_number)
-- **Migration:** adicionar `devis_number` + trigger + backfill
-- **Dependências novas:** `html2canvas`, `jspdf`
+Pra o link ficar como botão clicável e bonito, a edge function envia **HTML + texto**:
+- HTML: cabeçalho com nome do escritório, parágrafos, **botão verde "Aceitar Proposta"** linkando pro `accept_url`, rodapé com contatos
+- Texto: mesma mensagem em formato simples (fallback para clientes que bloqueiam HTML), com a URL escrita por extenso
 
-## Fora do escopo (posso fazer depois se quiser)
+A textarea no dialog continua editando o texto da mensagem; o botão de aceite é injetado automaticamente abaixo da mensagem (não fica no campo editável pra evitar o usuário apagar sem querer). Um aviso no dialog: *"O link de aceite será adicionado automaticamente ao final do e-mail."*
 
-- Versão bilíngue PT/FR lado a lado no mesmo PDF
-- Assinatura digital / e-sign integrado
-- Salvar PDF gerado no Storage automaticamente
+### 4. Sem travas no aceite — confirmado
+
+A edge function `accept-devis-proposal` **já é pública** (não exige JWT, aceita qualquer um com o token UUID), faz tudo num clique:
+- Cliente abre o link → vê a proposta renderizada → clica "Aceitar proposta" → fim
+- Sem login, sem cadastro, sem captcha, sem confirmação dupla
+- Idempotente: se clicar duas vezes, mostra "já aceita" sem duplicar cobrança
+- Token UUID v4 (impossível adivinhar) é a única "trava" — e isso é segurança mínima necessária pra ninguém aceitar a proposta de outro cliente por engano
+
+### 5. Notificação interna do aceite
+
+Quando o cliente aceita:
+- `devis.status` vira `cobranca_pendente` (já implementado)
+- `devis.accepted_at` e `accepted_ip` registrados (já implementado)
+- Cobrança de 50% criada em `financial_entries` (já implementado)
+- Serviço criado em `services` para a Operação (já implementado)
+- Linha em `audit_logs` com ação `devis_accepted_charge_created` (já implementado)
+
+No frontend, a página de detalhe do devis já reflete tudo isso assim que o usuário interno recarregar (queries do React Query revalidam). **Bônus opcional:** ativar Realtime na tabela `devis` pra a tela atualizar sozinha quando o cliente aceitar — me avisa se quiser, fica em ~5 min.
+
+## Resumo das mudanças no plano (só os deltas)
+
+- **Edge function `send-devis-proposal`** passa a receber também `accept_url` (ou monta ela a partir de `origin` + `accept_token` que vem do frontend) e gera **HTML do e-mail** com botão de aceite estilizado, além do texto plano
+- **`SendDevisDialog.tsx`** monta o `accept_url` com `window.location.origin` + `/aceitar-proposta/{accept_token}` e passa pra função; mostra um preview do link no dialog antes de enviar
+- **Texto padrão** dos 4 idiomas inclui menção ao link
+
+## Sem mudanças em
+
+- Página `AceitarProposta.tsx` (já está pronta)
+- Edge function `accept-devis-proposal` (já está pronta e sem travas)
+- Schema do banco (`accept_token` já existe; `sent_at` continua sendo a única coluna nova)
+
+## Continua igual ao plano anterior
+
+- Botão "📧 Enviar ao cliente" só aparece em `status === pronta_para_envio`
+- Resend como provedor de envio (peço a `RESEND_API_KEY` quando aprovar)
+- PDF gerado com o mesmo template Lundgaard Jensen e anexado
+- Após envio, status muda automaticamente para `enviada_ao_cliente`
+- Migration adicionando `devis.sent_at`
+
+Aprove e eu sigo. Assim que confirmar, peço a `RESEND_API_KEY` e implemento tudo de uma vez.
 
