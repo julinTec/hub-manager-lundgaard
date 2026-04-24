@@ -63,7 +63,7 @@ export function AppSidebar() {
               <span className="text-xs font-bold text-sidebar-primary-foreground">LJ</span>
             </div>
           ) : (
-            <img src={logoBanner} alt="Lundgaard Jensen" className="h-auto w-[140px] invert brightness-0" style={{ filter: "invert(1) brightness(2)" }} />
+            <img src={logoBanner} alt="Lundgaard Jensen" className="h-auto w-[160px]" />
           )}
         </div>
       </SidebarHeader>
