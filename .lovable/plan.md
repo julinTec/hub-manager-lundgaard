@@ -1,100 +1,74 @@
 
 
-# Plano atualizado: Botão "Enviar" + link de aceite no e-mail
+# Implementação: Botão "Enviar" com Lovable Emails (link de aceite + PDF)
 
-Mantém tudo do plano anterior (botão "Enviar ao cliente" só em `pronta_para_envio`, dialog com Para/Assunto/Mensagem, PDF anexo, status muda para `enviada_ao_cliente` após envio) e **acrescenta o link de aceite no corpo do e-mail**.
+Você escolheu **Opção A — Lovable Emails (nativo)**. Vou implementar tudo de uma vez assim que aprovar.
 
-## Boa notícia: a infra de aceite já existe
+## Pré-requisito automático: domínio de envio
 
-O projeto já tem:
-- Coluna `devis.accept_token` (UUID único, gerado automaticamente em cada devis)
-- Edge function pública `accept-devis-proposal` que aceita GET (preview) e POST (registra aceite)
-- Página `/aceitar-proposta/:token` (`AceitarProposta.tsx`) que mostra a proposta e tem o botão "Aceitar proposta"
-- Ao aceitar: registra `accepted_at`, IP, muda status para `cobranca_pendente`, cria cobrança financeira inicial (50%) e o serviço na Operação automaticamente
+Lovable Emails precisa de um subdomínio remetente (ex: `notify.lundgaardjensen.com`) verificado. Quando você aprovar, abro o dialog de configuração — você informa o domínio uma vez e o sistema:
+- Adiciona os registros NS no seu provedor de DNS (com instruções claras)
+- Provisiona SPF/DKIM/MX automaticamente
+- Cria toda a infra de fila/retry/log de envios
 
-Ou seja: **só precisamos colocar o link no e-mail**. Toda a mecânica de aceite já está pronta e funcionando — sem travas, sem login exigido, um clique e pronto.
+Enquanto o DNS propaga (até 72h), o restante da implementação fica pronto e o sistema enfileira; assim que o domínio fica `active`, os e-mails saem.
 
-## O que muda no plano
+## O que vou implementar
 
-### 1. Link de aceite no corpo do e-mail
+### 1. Backend — fila e infraestrutura
+- Configurar infra de e-mails (fila pgmq + cron + tabelas de log/supressão/unsubscribe) — automático após o domínio
+- Criar template React Email `devis-proposal.tsx` em `supabase/functions/_shared/transactional-email-templates/`:
+  - Cabeçalho Lundgaard Jensen
+  - Mensagem editável vinda do dialog
+  - **Botão verde grande "Aceitar Proposta"** linkando pra `{origin}/aceitar-proposta/{accept_token}`
+  - Link `📎 Baixar proposta em PDF` apontando pro arquivo no Storage
+  - Versões PT / FR / EN / ES
+- Registrar o template no `registry.ts`
+- Função `send-transactional-email` (criada pelo scaffold) cuida do envio
 
-A mensagem padrão passa a incluir um link destacado. Formato:
+### 2. Backend — armazenar o PDF
+- Migration: criar bucket privado `devis-pdfs` no Storage com RLS (só o autor da devis lê; service role escreve)
+- O cliente só precisa do link assinado de 30 dias — não vê o bucket diretamente
 
-```
-{ORIGIN}/aceitar-proposta/{accept_token}
-```
+### 3. Frontend
+- **Novo componente** `src/components/devis/SendDevisDialog.tsx`:
+  - Campos: Para (pré-preenchido com e-mail do cliente, editável; aceita múltiplos), Assunto (pré-preenchido), Mensagem (textarea editável, 4 idiomas)
+  - Preview do link de aceite (`{origin}/aceitar-proposta/{token}`) — visível mas não editável
+  - Aviso: *"O link de aceite e o link do PDF serão adicionados automaticamente ao e-mail."*
+  - Botão "Enviar agora"
+- **Editar `src/lib/exportDevisPdf.ts`**: adicionar `generateDevisPdfBlob(container, fileName): Promise<Blob>` (mesma lógica, retorna Blob em vez de baixar)
+- **Editar `src/pages/DevisDetail.tsx`**:
+  - Botão verde **"📧 Enviar ao cliente"** ao lado de "Exportar PDF" — visível só quando `status === 'pronta_para_envio'`
+  - Handler: renderiza template off-screen → gera Blob do PDF → faz upload pro bucket `devis-pdfs/{devis_id}/{devis_number}.pdf` → cria signed URL (30 dias) → invoca `send-transactional-email` com `templateData: { client_name, devis_number, message_text, accept_url, pdf_url, language }`
+  - Em sucesso: registra `devis.sent_at` + muda `status` para `enviada_ao_cliente` + toast + invalidate queries
 
-Onde `{ORIGIN}` é a URL pública do app (detectada automaticamente — `window.location.origin` no momento de envio, passada para a edge function).
+### 4. Migration
+- `ALTER TABLE devis ADD COLUMN sent_at TIMESTAMPTZ NULL`
+- Criar bucket `devis-pdfs` (privado) + políticas RLS
 
-### 2. Texto padrão atualizado (PT — exemplo)
+## O fluxo do cliente (sem travas)
 
-```
-Prezado(a) {nome_cliente},
+1. Recebe e-mail bonito, do seu domínio, em qualquer caixa de entrada
+2. Vê a mensagem + botão verde **"Aceitar Proposta"** + link **"Baixar PDF"**
+3. Clica em "Baixar PDF" → abre o contrato no padrão Lundgaard Jensen
+4. Clica em "Aceitar Proposta" → cai na página `/aceitar-proposta/:token` (já existente, sem login)
+5. Confirma → status vira `cobranca_pendente`, cobrança 50% e serviço criados (já implementado)
 
-Conforme conversado, segue em anexo a proposta de prestação de serviços
-da Lundgaard Jensen Advocacia e Consultoria Internacional, referente ao
-contrato {devis_number}.
+## Arquivos afetados
 
-Para aceitar a proposta de forma rápida e segura, basta clicar no link
-abaixo:
+- **Setup:** infra de e-mails (automático) + bucket Storage
+- **Criar:** `supabase/functions/_shared/transactional-email-templates/devis-proposal.tsx`
+- **Editar:** `supabase/functions/_shared/transactional-email-templates/registry.ts`
+- **Criar:** `src/components/devis/SendDevisDialog.tsx`
+- **Editar:** `src/lib/exportDevisPdf.ts` (helper Blob)
+- **Editar:** `src/pages/DevisDetail.tsx` (botão + integração)
+- **Migration:** `devis.sent_at` + bucket `devis-pdfs` + RLS
 
-👉 ACEITAR PROPOSTA: {accept_url}
+## Fora do escopo (futuro)
 
-Permanecemos à disposição para esclarecer quaisquer dúvidas.
+- Histórico de envios na tela do devis com botão "reenviar"
+- Tracking de abertura do e-mail
+- Realtime na devis pra atualizar sozinho quando o cliente aceitar (5 min — só pedir se quiser)
 
-Atenciosamente,
-Equipe Lundgaard Jensen
-lundgaardjensen.com
-```
-
-Versões equivalentes em FR / EN / ES (mesmo detector de idioma já usado no PDF).
-
-### 3. E-mail em HTML (não só texto plano)
-
-Pra o link ficar como botão clicável e bonito, a edge function envia **HTML + texto**:
-- HTML: cabeçalho com nome do escritório, parágrafos, **botão verde "Aceitar Proposta"** linkando pro `accept_url`, rodapé com contatos
-- Texto: mesma mensagem em formato simples (fallback para clientes que bloqueiam HTML), com a URL escrita por extenso
-
-A textarea no dialog continua editando o texto da mensagem; o botão de aceite é injetado automaticamente abaixo da mensagem (não fica no campo editável pra evitar o usuário apagar sem querer). Um aviso no dialog: *"O link de aceite será adicionado automaticamente ao final do e-mail."*
-
-### 4. Sem travas no aceite — confirmado
-
-A edge function `accept-devis-proposal` **já é pública** (não exige JWT, aceita qualquer um com o token UUID), faz tudo num clique:
-- Cliente abre o link → vê a proposta renderizada → clica "Aceitar proposta" → fim
-- Sem login, sem cadastro, sem captcha, sem confirmação dupla
-- Idempotente: se clicar duas vezes, mostra "já aceita" sem duplicar cobrança
-- Token UUID v4 (impossível adivinhar) é a única "trava" — e isso é segurança mínima necessária pra ninguém aceitar a proposta de outro cliente por engano
-
-### 5. Notificação interna do aceite
-
-Quando o cliente aceita:
-- `devis.status` vira `cobranca_pendente` (já implementado)
-- `devis.accepted_at` e `accepted_ip` registrados (já implementado)
-- Cobrança de 50% criada em `financial_entries` (já implementado)
-- Serviço criado em `services` para a Operação (já implementado)
-- Linha em `audit_logs` com ação `devis_accepted_charge_created` (já implementado)
-
-No frontend, a página de detalhe do devis já reflete tudo isso assim que o usuário interno recarregar (queries do React Query revalidam). **Bônus opcional:** ativar Realtime na tabela `devis` pra a tela atualizar sozinha quando o cliente aceitar — me avisa se quiser, fica em ~5 min.
-
-## Resumo das mudanças no plano (só os deltas)
-
-- **Edge function `send-devis-proposal`** passa a receber também `accept_url` (ou monta ela a partir de `origin` + `accept_token` que vem do frontend) e gera **HTML do e-mail** com botão de aceite estilizado, além do texto plano
-- **`SendDevisDialog.tsx`** monta o `accept_url` com `window.location.origin` + `/aceitar-proposta/{accept_token}` e passa pra função; mostra um preview do link no dialog antes de enviar
-- **Texto padrão** dos 4 idiomas inclui menção ao link
-
-## Sem mudanças em
-
-- Página `AceitarProposta.tsx` (já está pronta)
-- Edge function `accept-devis-proposal` (já está pronta e sem travas)
-- Schema do banco (`accept_token` já existe; `sent_at` continua sendo a única coluna nova)
-
-## Continua igual ao plano anterior
-
-- Botão "📧 Enviar ao cliente" só aparece em `status === pronta_para_envio`
-- Resend como provedor de envio (peço a `RESEND_API_KEY` quando aprovar)
-- PDF gerado com o mesmo template Lundgaard Jensen e anexado
-- Após envio, status muda automaticamente para `enviada_ao_cliente`
-- Migration adicionando `devis.sent_at`
-
-Aprove e eu sigo. Assim que confirmar, peço a `RESEND_API_KEY` e implemento tudo de uma vez.
+Aprove e eu sigo. Primeiro passo após aprovação: abrir o dialog de configuração do domínio remetente.
 
