@@ -298,6 +298,7 @@ export type Database = {
           created_by: string | null
           deadline_date: string | null
           description: string | null
+          devis_number: string | null
           down_payment_amount: number
           final_charge_generated: boolean | null
           id: string
@@ -336,6 +337,7 @@ export type Database = {
           created_by?: string | null
           deadline_date?: string | null
           description?: string | null
+          devis_number?: string | null
           down_payment_amount?: number
           final_charge_generated?: boolean | null
           id?: string
@@ -374,6 +376,7 @@ export type Database = {
           created_by?: string | null
           deadline_date?: string | null
           description?: string | null
+          devis_number?: string | null
           down_payment_amount?: number
           final_charge_generated?: boolean | null
           id?: string
