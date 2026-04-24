@@ -21,8 +21,10 @@ import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISug
 import ValidationChecklist from "@/components/devis/ValidationChecklist";
 import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
 import DevisPdfTemplate from "@/components/devis/DevisPdfTemplate";
+import SendDevisDialog from "@/components/devis/SendDevisDialog";
 import { exportDevisPdfFromContainer } from "@/lib/exportDevisPdf";
 import { createRoot } from "react-dom/client";
+import { Send } from "lucide-react";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
@@ -35,6 +37,7 @@ export default function DevisDetail() {
   const [form, setForm] = useState<any>(null);
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestions | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
 
   const { data: devis, isLoading } = useQuery({
     queryKey: ["devis", id],
@@ -236,6 +239,11 @@ export default function DevisDetail() {
               <Button variant="outline" onClick={handleExportPdf}>
                 <FileDown className="h-4 w-4 mr-2" /> Exportar PDF
               </Button>
+              {devis.status === "pronta_para_envio" && (
+                <Button onClick={() => setSendOpen(true)} className="bg-green-600 hover:bg-green-700">
+                  <Send className="h-4 w-4 mr-2" /> Enviar ao cliente
+                </Button>
+              )}
               <Button onClick={() => setEditing(true)}><Pencil className="h-4 w-4 mr-2" /> Editar</Button>
             </>
           )}
