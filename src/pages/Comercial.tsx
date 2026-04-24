@@ -152,6 +152,20 @@ export default function Comercial() {
           queryClient.invalidateQueries({ queryKey: ["devis"] });
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "financial_entries" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["devis-financial-entries"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "services" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["devis-services"] });
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -501,7 +515,13 @@ export default function Comercial() {
           />
 
           {view === "kanban" ? (
-            <DevisKanban devis={filteredDevis} clientsById={clientsById} profilesById={profilesById} />
+            <DevisKanban
+              devis={filteredDevis}
+              clientsById={clientsById}
+              profilesById={profilesById}
+              financialEntries={devisFinancialEntries}
+              services={devisServices}
+            />
           ) : (
             <Card>
               <Table>
