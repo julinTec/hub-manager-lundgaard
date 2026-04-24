@@ -125,6 +125,22 @@ export default function DevisDetail() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const updateStatus = useMutation({
+    mutationFn: async (newStatus: string) => {
+      if (requiresValidation(newStatus) && !devis?.validated_at) {
+        throw new Error("Valide a proposta antes de mover para este status.");
+      }
+      const { error } = await supabase.from("devis").update({ status: newStatus as any }).eq("id", id!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Status atualizado!");
+      queryClient.invalidateQueries({ queryKey: ["devis"] });
+      queryClient.invalidateQueries({ queryKey: ["devis", id] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const handleGenerate = async () => {
     if (!form.meeting_report?.trim()) return;
     setGenerating(true);
@@ -144,6 +160,32 @@ export default function DevisDetail() {
       toast.error(e.message || "Erro ao gerar proposta");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    const client = clientsById[devis.client_id];
+    const host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.left = "-10000px";
+    host.style.top = "0";
+    host.style.zIndex = "-1";
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await new Promise<void>((resolve) => {
+        root.render(<DevisPdfTemplate devis={devis} client={client} />);
+        // aguarda render + carregamento da imagem
+        setTimeout(resolve, 600);
+      });
+      const safeName = (client?.name || "cliente").replace(/[^\w\-]+/g, "_");
+      await exportDevisPdfFromContainer(host, `Devis-${devis.devis_number || devis.id.slice(0, 8)}-${safeName}.pdf`);
+      toast.success("PDF gerado!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao gerar PDF");
+    } finally {
+      root.unmount();
+      host.remove();
     }
   };
 
