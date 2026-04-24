@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2, Upload } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ import { ALL_STATUSES, STATUS_LABELS as statusLabels, STATUS_BADGE_CLASSES as de
 import DevisKanban from "@/components/devis/DevisKanban";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISuggestionsBlock";
+import UploadAtaDialog, { type ConfirmedAtaResult } from "@/components/devis/UploadAtaDialog";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
