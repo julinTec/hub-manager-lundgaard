@@ -440,8 +440,16 @@ export default function Comercial() {
                   <Button onClick={() => createDevis.mutate(devisForm)} disabled={!devisForm.client_id || createDevis.isPending}>Salvar</Button>
                 </DialogFooter>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
+
+          <UploadAtaDialog
+            open={uploadAtaOpen}
+            onOpenChange={setUploadAtaOpen}
+            clients={clients}
+            onConfirm={handleAtaConfirm}
+          />
 
           {view === "kanban" ? (
             <DevisKanban devis={filteredDevis} clientsById={clientsById} profilesById={profilesById} />
