@@ -234,6 +234,7 @@ function Column({
                 presentColumns={item.presentColumns}
                 hasCharge={item.hasCharge}
                 hasService={item.hasService}
+                columnStatus={status}
                 derived
               />
             ) : (
@@ -243,6 +244,7 @@ function Column({
                 clientsById={clientsById}
                 profilesById={profilesById}
                 columnId={status}
+                columnStatus={status}
               />
             ),
           )}
