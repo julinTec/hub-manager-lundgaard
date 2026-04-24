@@ -90,10 +90,31 @@ function DevisCard({
   hasCharge = false,
   hasService = false,
   derived = false,
+  columnStatus,
 }: any) {
   const navigate = useNavigate();
   const client = clientsById[devis.client_id];
   const responsavel = profilesById[devis.commercial_responsible];
+
+  // Valor exibido varia por coluna:
+  // - "cobranca_pendente": valor da cobrança 50% (down_payment_amount, fallback total*0.5)
+  // - "enviado_para_operacao": oculto (foco é o serviço, não o financeiro)
+  // - demais: total da proposta
+  let amountNode: React.ReactNode = (
+    <div className="text-base font-semibold text-primary">{fmtBRL(devis.total_amount)}</div>
+  );
+  if (columnStatus === "cobranca_pendente") {
+    const charge = Number(devis.down_payment_amount) > 0
+      ? Number(devis.down_payment_amount)
+      : Number(devis.total_amount) * 0.5;
+    amountNode = (
+      <div className="text-base font-semibold text-orange-600 dark:text-orange-400">
+        {fmtBRL(charge)} <span className="text-[10px] font-normal text-muted-foreground">(50%)</span>
+      </div>
+    );
+  } else if (columnStatus === "enviado_para_operacao") {
+    amountNode = null;
+  }
 
   const card = (
     <Card
@@ -104,7 +125,7 @@ function DevisCard({
       )}
     >
       <div className="font-medium text-sm line-clamp-2">{client?.name || devis.title || "—"}</div>
-      <div className="text-base font-semibold text-primary">{fmtBRL(devis.total_amount)}</div>
+      {amountNode}
       {(hasCharge || hasService) && (
         <div className="flex flex-wrap gap-1">
           {hasCharge && (
