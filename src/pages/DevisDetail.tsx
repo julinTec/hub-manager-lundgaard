@@ -204,7 +204,9 @@ export default function DevisDetail() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold font-display">{devis.title}</h1>
-            <p className="text-muted-foreground mt-1">Detalhes do devis</p>
+            <p className="text-muted-foreground mt-1">
+              Detalhes do devis {devis.devis_number && <span className="ml-2 font-mono text-xs px-2 py-0.5 rounded bg-muted">{devis.devis_number}</span>}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -231,6 +233,9 @@ export default function DevisDetail() {
                   <LinkIcon className="h-4 w-4 mr-2" /> Copiar link de aceite
                 </Button>
               )}
+              <Button variant="outline" onClick={handleExportPdf}>
+                <FileDown className="h-4 w-4 mr-2" /> Exportar PDF
+              </Button>
               <Button onClick={() => setEditing(true)}><Pencil className="h-4 w-4 mr-2" /> Editar</Button>
             </>
           )}
