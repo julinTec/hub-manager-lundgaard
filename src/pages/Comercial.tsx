@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2, Upload } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ import { ALL_STATUSES, STATUS_LABELS as statusLabels, STATUS_BADGE_CLASSES as de
 import DevisKanban from "@/components/devis/DevisKanban";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISuggestionsBlock";
+import UploadAtaDialog, { type ConfirmedAtaResult } from "@/components/devis/UploadAtaDialog";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
@@ -85,6 +86,7 @@ export default function Comercial() {
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestions | null>(null);
   const [aiAccepted, setAiAccepted] = useState<Partial<AISuggestions>>({});
   const [generating, setGenerating] = useState(false);
+  const [uploadAtaOpen, setUploadAtaOpen] = useState(false);
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: async () => {
@@ -209,6 +211,34 @@ export default function Comercial() {
       setGenerating(false);
     }
   };
+
+  const handleAtaConfirm = ({ client_id, payload }: ConfirmedAtaResult) => {
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    const total = payload.devis.total_amount || 0;
+    const meetingDate = payload.meeting.date ? new Date(payload.meeting.date + "T00:00:00") : undefined;
+    setDevisForm({
+      client_id,
+      meeting_date: isNaN(meetingDate?.getTime() ?? NaN) ? undefined : meetingDate,
+      commercial_responsible: user?.id || "",
+      meeting_summary: payload.meeting.summary || "",
+      meeting_report: payload.meeting.report || "",
+      status: "rascunho",
+      total_amount: total ? String(total) : "",
+      down_payment_amount: total ? String((total * 0.5).toFixed(2)) : "",
+      notes: "",
+      title: payload.devis.title || "",
+    });
+    setAiAccepted({
+      service_type: payload.devis.service_type || "",
+      responsible_sector: payload.devis.responsible_sector || "",
+      scope_description: payload.devis.scope_description || "",
+      proposal_structure: payload.devis.proposal_structure || "",
+    });
+    setAiSuggestions(null);
+    setDevisDialogOpen(true);
+    toast.success("Devis pré-preenchido. Revise e salve.");
+  };
+
   const openEditClient = (c: any) => {
     setClientForm({
       id: c.id,
@@ -305,8 +335,12 @@ export default function Comercial() {
               <ToggleGroupItem value="list" aria-label="Lista" className="gap-2"><List className="h-4 w-4" /> Lista</ToggleGroupItem>
               <ToggleGroupItem value="kanban" aria-label="Kanban" className="gap-2"><LayoutGrid className="h-4 w-4" /> Kanban</ToggleGroupItem>
             </ToggleGroup>
-            <Dialog open={devisDialogOpen} onOpenChange={(o) => { setDevisDialogOpen(o); if (!o) { setDevisForm(emptyDevis); setAiSuggestions(null); setAiAccepted({}); } }}>
-              <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> Novo Devis</Button></DialogTrigger>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setUploadAtaOpen(true)}>
+                <Upload className="h-4 w-4 mr-2" /> Upload de Relatório / Ata
+              </Button>
+              <Dialog open={devisDialogOpen} onOpenChange={(o) => { setDevisDialogOpen(o); if (!o) { setDevisForm(emptyDevis); setAiSuggestions(null); setAiAccepted({}); } }}>
+                <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> Novo Devis</Button></DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>Novo Devis</DialogTitle></DialogHeader>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -406,8 +440,16 @@ export default function Comercial() {
                   <Button onClick={() => createDevis.mutate(devisForm)} disabled={!devisForm.client_id || createDevis.isPending}>Salvar</Button>
                 </DialogFooter>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
+
+          <UploadAtaDialog
+            open={uploadAtaOpen}
+            onOpenChange={setUploadAtaOpen}
+            clients={clients}
+            onConfirm={handleAtaConfirm}
+          />
 
           {view === "kanban" ? (
             <DevisKanban devis={filteredDevis} clientsById={clientsById} profilesById={profilesById} />
