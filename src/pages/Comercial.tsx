@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -114,6 +114,23 @@ export default function Comercial() {
       return data ?? [];
     },
   });
+
+  // Realtime: mantém Kanban e lista sincronizados com mudanças do banco
+  useEffect(() => {
+    const channel = supabase
+      .channel("devis-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "devis" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["devis"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const clientsById = useMemo(() => Object.fromEntries(clients.map((c: any) => [c.id, c])), [clients]);
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((p: any) => [p.user_id, p])), [profiles]);
