@@ -308,11 +308,11 @@ export default function UploadAtaDialog({ open, onOpenChange, clients, onConfirm
                   <UserPlus className="h-4 w-4" /> Cliente
                 </h3>
                 {matches.exact ? (
-                  <Badge className="bg-green-500/10 text-green-700 border-green-500/30 gap-1">
+                  <Badge variant="secondary" className="gap-1">
                     <CheckCircle2 className="h-3 w-3" /> Cliente encontrado
                   </Badge>
                 ) : matches.suggestions.length > 0 ? (
-                  <Badge className="bg-yellow-500/10 text-yellow-700 border-yellow-500/30 gap-1">
+                  <Badge variant="secondary" className="gap-1">
                     <AlertTriangle className="h-3 w-3" /> Possíveis correspondências
                   </Badge>
                 ) : (
