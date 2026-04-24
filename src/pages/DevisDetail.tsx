@@ -297,31 +297,53 @@ export default function DevisDetail() {
             ) : <p className="font-medium mt-1">{client?.name || "—"}</p>}
           </div>
 
-          {/* Status */}
+          {/* Status — clicável direto (sem precisar editar) */}
           <div>
             <Label>Status</Label>
-            {editing ? (
-              <>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ALL_STATUSES.map((k) => {
-                      const blocked = requiresValidation(k) && !devis.validated_at;
-                      return (
-                        <SelectItem key={k} value={k} disabled={blocked}>
-                          {statusLabels[k]}{blocked ? " 🔒" : ""}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="mt-1 inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity"
+                  title="Clique para alterar o status"
+                >
+                  <Badge variant="outline" className={devisStatusColors[devis.status] || ""}>
+                    {statusLabels[devis.status] || devis.status}
+                  </Badge>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-1" align="start">
+                <div className="flex flex-col">
+                  {ALL_STATUSES.map((k) => {
+                    const blocked = requiresValidation(k) && !devis.validated_at;
+                    const isCurrent = k === devis.status;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        disabled={blocked || isCurrent || updateStatus.isPending}
+                        onClick={() => updateStatus.mutate(k)}
+                        className={cn(
+                          "text-left text-sm px-2 py-1.5 rounded hover:bg-accent transition-colors flex items-center justify-between gap-2",
+                          (blocked || isCurrent) && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                        )}
+                        title={blocked ? "Valide a proposta antes" : ""}
+                      >
+                        <span>{statusLabels[k]}</span>
+                        {blocked && <span>🔒</span>}
+                        {isCurrent && <span className="text-xs text-muted-foreground">atual</span>}
+                      </button>
+                    );
+                  })}
+                </div>
                 {!devis.validated_at && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    🔒 Valide a proposta antes de enviar ao cliente
+                  <p className="text-[10px] text-muted-foreground mt-1 px-2 pb-1">
+                    🔒 Valide a proposta para liberar status avançados
                   </p>
                 )}
-              </>
-            ) : <div className="mt-1"><Badge variant="outline" className={devisStatusColors[devis.status] || ""}>{statusLabels[devis.status] || devis.status}</Badge></div>}
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Data Reunião */}
@@ -375,10 +397,16 @@ export default function DevisDetail() {
           <div>
             <Label>Valor total</Label>
             {editing ? (
-              <Input type="number" step="0.01" value={form.total_amount} onChange={(e) => {
-                const total = e.target.value;
-                setForm({ ...form, total_amount: total, down_payment_amount: total === "" ? "" : String((Number(total) * 0.5).toFixed(2)) });
-              }} />
+              <CurrencyInputBRL
+                value={form.total_amount}
+                onChange={(total) =>
+                  setForm({
+                    ...form,
+                    total_amount: total,
+                    down_payment_amount: total === "" ? "" : String((Number(total) * 0.5).toFixed(2)),
+                  })
+                }
+              />
             ) : <p className="font-medium mt-1 text-lg">{fmtBRL(devis.total_amount)}</p>}
           </div>
 
@@ -386,7 +414,10 @@ export default function DevisDetail() {
           <div>
             <Label>Valor de entrada</Label>
             {editing ? (
-              <Input type="number" step="0.01" value={form.down_payment_amount} onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })} />
+              <CurrencyInputBRL
+                value={form.down_payment_amount}
+                onChange={(v) => setForm({ ...form, down_payment_amount: v })}
+              />
             ) : <p className="font-medium mt-1 text-lg">{fmtBRL(devis.down_payment_amount)}</p>}
           </div>
 
