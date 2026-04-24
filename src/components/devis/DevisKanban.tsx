@@ -141,6 +141,21 @@ export default function DevisKanban({ devis, clientsById, profilesById }: DevisK
     if (!card || card.status === newStatus) return;
     if (!PIPELINE_STATUSES.includes(newStatus as any)) return;
 
+    // Bloqueio: proposta já recusada pelo cliente — não pode mudar
+    if (card.rejected_at && newStatus !== "rejeitada") {
+      toast.error("Esta proposta foi recusada pelo cliente — não é possível movê-la.");
+      return;
+    }
+
+    // Bloqueio: proposta já aceita pelo cliente — só avança no funil pós-aceite
+    if (card.accepted_at) {
+      const allowedAfterAccept = ["aceita", "cobranca_pendente", "entrada_recebida", "enviado_para_operacao"];
+      if (!allowedAfterAccept.includes(newStatus)) {
+        toast.error("Esta proposta já foi aceita pelo cliente — não é possível voltar para etapas anteriores.");
+        return;
+      }
+    }
+
     // Bloqueio: status que exige validação comercial
     if (requiresValidation(newStatus) && !card.validated_at) {
       toast.error("É necessário validar a proposta antes de enviá-la ao cliente");
