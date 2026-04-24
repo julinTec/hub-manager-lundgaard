@@ -12,13 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { ArrowLeft, Pencil, Save, X, CalendarIcon, Sparkles, Loader2, Link as LinkIcon, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, CalendarIcon, Sparkles, Loader2, Link as LinkIcon, CheckCircle2, FileDown, ChevronDown } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { ALL_STATUSES, STATUS_LABELS as statusLabels, STATUS_BADGE_CLASSES as devisStatusColors, requiresValidation } from "@/lib/devisStatus";
 import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISuggestionsBlock";
 import ValidationChecklist from "@/components/devis/ValidationChecklist";
+import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
+import DevisPdfTemplate from "@/components/devis/DevisPdfTemplate";
+import { exportDevisPdfFromContainer } from "@/lib/exportDevisPdf";
+import { createRoot } from "react-dom/client";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
@@ -121,6 +125,22 @@ export default function DevisDetail() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const updateStatus = useMutation({
+    mutationFn: async (newStatus: string) => {
+      if (requiresValidation(newStatus) && !devis?.validated_at) {
+        throw new Error("Valide a proposta antes de mover para este status.");
+      }
+      const { error } = await supabase.from("devis").update({ status: newStatus as any }).eq("id", id!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Status atualizado!");
+      queryClient.invalidateQueries({ queryKey: ["devis"] });
+      queryClient.invalidateQueries({ queryKey: ["devis", id] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const handleGenerate = async () => {
     if (!form.meeting_report?.trim()) return;
     setGenerating(true);
@@ -143,6 +163,32 @@ export default function DevisDetail() {
     }
   };
 
+  const handleExportPdf = async () => {
+    const client = clientsById[devis.client_id];
+    const host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.left = "-10000px";
+    host.style.top = "0";
+    host.style.zIndex = "-1";
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      await new Promise<void>((resolve) => {
+        root.render(<DevisPdfTemplate devis={devis} client={client} />);
+        // aguarda render + carregamento da imagem
+        setTimeout(resolve, 600);
+      });
+      const safeName = (client?.name || "cliente").replace(/[^\w\-]+/g, "_");
+      await exportDevisPdfFromContainer(host, `Devis-${devis.devis_number || devis.id.slice(0, 8)}-${safeName}.pdf`);
+      toast.success("PDF gerado!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao gerar PDF");
+    } finally {
+      root.unmount();
+      host.remove();
+    }
+  };
+
   if (isLoading || !form) return <div className="text-muted-foreground">Carregando...</div>;
   if (!devis) return <div className="text-muted-foreground">Devis não encontrado.</div>;
 
@@ -158,7 +204,9 @@ export default function DevisDetail() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold font-display">{devis.title}</h1>
-            <p className="text-muted-foreground mt-1">Detalhes do devis</p>
+            <p className="text-muted-foreground mt-1">
+              Detalhes do devis {devis.devis_number && <span className="ml-2 font-mono text-xs px-2 py-0.5 rounded bg-muted">{devis.devis_number}</span>}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -185,6 +233,9 @@ export default function DevisDetail() {
                   <LinkIcon className="h-4 w-4 mr-2" /> Copiar link de aceite
                 </Button>
               )}
+              <Button variant="outline" onClick={handleExportPdf}>
+                <FileDown className="h-4 w-4 mr-2" /> Exportar PDF
+              </Button>
               <Button onClick={() => setEditing(true)}><Pencil className="h-4 w-4 mr-2" /> Editar</Button>
             </>
           )}
@@ -246,31 +297,53 @@ export default function DevisDetail() {
             ) : <p className="font-medium mt-1">{client?.name || "—"}</p>}
           </div>
 
-          {/* Status */}
+          {/* Status — clicável direto (sem precisar editar) */}
           <div>
             <Label>Status</Label>
-            {editing ? (
-              <>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ALL_STATUSES.map((k) => {
-                      const blocked = requiresValidation(k) && !devis.validated_at;
-                      return (
-                        <SelectItem key={k} value={k} disabled={blocked}>
-                          {statusLabels[k]}{blocked ? " 🔒" : ""}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="mt-1 inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity"
+                  title="Clique para alterar o status"
+                >
+                  <Badge variant="outline" className={devisStatusColors[devis.status] || ""}>
+                    {statusLabels[devis.status] || devis.status}
+                  </Badge>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-1" align="start">
+                <div className="flex flex-col">
+                  {ALL_STATUSES.map((k) => {
+                    const blocked = requiresValidation(k) && !devis.validated_at;
+                    const isCurrent = k === devis.status;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        disabled={blocked || isCurrent || updateStatus.isPending}
+                        onClick={() => updateStatus.mutate(k)}
+                        className={cn(
+                          "text-left text-sm px-2 py-1.5 rounded hover:bg-accent transition-colors flex items-center justify-between gap-2",
+                          (blocked || isCurrent) && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                        )}
+                        title={blocked ? "Valide a proposta antes" : ""}
+                      >
+                        <span>{statusLabels[k]}</span>
+                        {blocked && <span>🔒</span>}
+                        {isCurrent && <span className="text-xs text-muted-foreground">atual</span>}
+                      </button>
+                    );
+                  })}
+                </div>
                 {!devis.validated_at && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    🔒 Valide a proposta antes de enviar ao cliente
+                  <p className="text-[10px] text-muted-foreground mt-1 px-2 pb-1">
+                    🔒 Valide a proposta para liberar status avançados
                   </p>
                 )}
-              </>
-            ) : <div className="mt-1"><Badge variant="outline" className={devisStatusColors[devis.status] || ""}>{statusLabels[devis.status] || devis.status}</Badge></div>}
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Data Reunião */}
@@ -324,10 +397,16 @@ export default function DevisDetail() {
           <div>
             <Label>Valor total</Label>
             {editing ? (
-              <Input type="number" step="0.01" value={form.total_amount} onChange={(e) => {
-                const total = e.target.value;
-                setForm({ ...form, total_amount: total, down_payment_amount: total === "" ? "" : String((Number(total) * 0.5).toFixed(2)) });
-              }} />
+              <CurrencyInputBRL
+                value={form.total_amount}
+                onChange={(total) =>
+                  setForm({
+                    ...form,
+                    total_amount: total,
+                    down_payment_amount: total === "" ? "" : String((Number(total) * 0.5).toFixed(2)),
+                  })
+                }
+              />
             ) : <p className="font-medium mt-1 text-lg">{fmtBRL(devis.total_amount)}</p>}
           </div>
 
@@ -335,7 +414,10 @@ export default function DevisDetail() {
           <div>
             <Label>Valor de entrada</Label>
             {editing ? (
-              <Input type="number" step="0.01" value={form.down_payment_amount} onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })} />
+              <CurrencyInputBRL
+                value={form.down_payment_amount}
+                onChange={(v) => setForm({ ...form, down_payment_amount: v })}
+              />
             ) : <p className="font-medium mt-1 text-lg">{fmtBRL(devis.down_payment_amount)}</p>}
           </div>
 
