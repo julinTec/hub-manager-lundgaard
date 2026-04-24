@@ -15,6 +15,7 @@ import {
 } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import {
@@ -29,18 +30,72 @@ import { cn } from "@/lib/utils";
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
 
+// Colunas pós-aceite cuja presença é derivada de dados (não do status do devis)
+const DERIVED_COLUMNS = new Set([
+  "aceita",
+  "cobranca_pendente",
+  "entrada_recebida",
+  "enviado_para_operacao",
+]);
+
 interface DevisKanbanProps {
   devis: any[];
   clientsById: Record<string, any>;
   profilesById: Record<string, any>;
+  financialEntries?: any[];
+  services?: any[];
 }
 
-function DevisCard({ devis, clientsById, profilesById, dragging = false }: any) {
+/**
+ * Calcula em quais colunas o card de um devis deve aparecer.
+ * - Pré-aceite (não recusado e sem accepted_at): apenas a coluna do seu status atual.
+ * - Recusado: apenas "rejeitada".
+ * - Aceito: combinação derivada de financial_entries + services.
+ *   "Aceita" sempre presente; "Cobrança pendente"/"Entrada recebida" conforme estado da cobrança;
+ *   "Enviado para operação" enquanto o serviço estiver em a_iniciar/em_andamento.
+ */
+function getColumnsForDevis(
+  devis: any,
+  feByDevis: Record<string, any[]>,
+  svcByDevis: Record<string, any[]>,
+): string[] {
+  if (devis.rejected_at) return ["rejeitada"];
+
+  if (!devis.accepted_at) {
+    // pré-aceite — comportamento atual: única coluna pelo status
+    return PIPELINE_STATUSES.includes(devis.status) ? [devis.status] : [];
+  }
+
+  // pós-aceite — derivado
+  const cols: string[] = ["aceita"];
+  const fes = feByDevis[devis.id] ?? [];
+  const hasPendente = fes.some((f) => f.conciliation_status === "pendente");
+  const hasConciliada = fes.some((f) => f.conciliation_status === "conciliado");
+  if (hasPendente) cols.push("cobranca_pendente");
+  if (hasConciliada) cols.push("entrada_recebida");
+
+  const svcs = svcByDevis[devis.id] ?? [];
+  const hasActiveSvc = svcs.some((s) => s.status === "a_iniciar" || s.status === "em_andamento");
+  if (hasActiveSvc) cols.push("enviado_para_operacao");
+
+  return cols;
+}
+
+function DevisCard({
+  devis,
+  clientsById,
+  profilesById,
+  dragging = false,
+  presentColumns = [],
+  hasCharge = false,
+  hasService = false,
+  derived = false,
+}: any) {
   const navigate = useNavigate();
   const client = clientsById[devis.client_id];
   const responsavel = profilesById[devis.commercial_responsible];
 
-  return (
+  const card = (
     <Card
       onClick={() => !dragging && navigate(`/comercial/devis/${devis.id}`)}
       className={cn(
@@ -50,6 +105,20 @@ function DevisCard({ devis, clientsById, profilesById, dragging = false }: any) 
     >
       <div className="font-medium text-sm line-clamp-2">{client?.name || devis.title || "—"}</div>
       <div className="text-base font-semibold text-primary">{fmtBRL(devis.total_amount)}</div>
+      {(hasCharge || hasService) && (
+        <div className="flex flex-wrap gap-1">
+          {hasCharge && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-300">
+              💰 Cobrança
+            </Badge>
+          )}
+          {hasService && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300">
+              🔧 Serviço
+            </Badge>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span className="truncate">
           {responsavel?.full_name || responsavel?.email || "Sem responsável"}
@@ -58,10 +127,36 @@ function DevisCard({ devis, clientsById, profilesById, dragging = false }: any) 
       </div>
     </Card>
   );
+
+  if (derived && presentColumns.length > 1) {
+    const labels = presentColumns.map((c: string) => STATUS_LABELS[c]).join(", ");
+    return (
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>{card}</div>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Aparece em: {labels}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return card;
 }
 
-function DraggableCard({ devis, clientsById, profilesById }: any) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: devis.id });
+function DraggableCard({
+  devis,
+  clientsById,
+  profilesById,
+  columnId,
+  ...rest
+}: any) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${devis.id}::${columnId}`,
+  });
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}>
       <DevisCard
@@ -69,12 +164,23 @@ function DraggableCard({ devis, clientsById, profilesById }: any) {
         clientsById={clientsById}
         profilesById={profilesById}
         dragging={isDragging}
+        {...rest}
       />
     </div>
   );
 }
 
-function Column({ status, devis, clientsById, profilesById }: any) {
+function StaticCard(props: any) {
+  return <DevisCard {...props} />;
+}
+
+function Column({
+  status,
+  items,
+  clientsById,
+  profilesById,
+  isDerivedColumn,
+}: any) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
     <div className="flex-shrink-0 w-72">
@@ -87,25 +193,39 @@ function Column({ status, devis, clientsById, profilesById }: any) {
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold text-sm">{STATUS_LABELS[status]}</div>
           <Badge variant="outline" className={cn("text-xs", STATUS_BADGE_CLASSES[status])}>
-            {devis.length}
+            {items.length}
           </Badge>
         </div>
         <div
           ref={setNodeRef}
           className={cn(
             "space-y-2 min-h-[200px] flex-1 rounded-md p-1 transition-colors",
-            isOver && "bg-accent/50",
+            isOver && !isDerivedColumn && "bg-accent/50",
           )}
         >
-          {devis.map((d: any) => (
-            <DraggableCard
-              key={d.id}
-              devis={d}
-              clientsById={clientsById}
-              profilesById={profilesById}
-            />
-          ))}
-          {devis.length === 0 && (
+          {items.map((item: any) =>
+            item.derived ? (
+              <StaticCard
+                key={`${item.devis.id}-${status}`}
+                devis={item.devis}
+                clientsById={clientsById}
+                profilesById={profilesById}
+                presentColumns={item.presentColumns}
+                hasCharge={item.hasCharge}
+                hasService={item.hasService}
+                derived
+              />
+            ) : (
+              <DraggableCard
+                key={`${item.devis.id}-${status}`}
+                devis={item.devis}
+                clientsById={clientsById}
+                profilesById={profilesById}
+                columnId={status}
+              />
+            ),
+          )}
+          {items.length === 0 && (
             <div className="text-xs text-muted-foreground text-center py-6">Vazio</div>
           )}
         </div>
@@ -114,21 +234,72 @@ function Column({ status, devis, clientsById, profilesById }: any) {
   );
 }
 
-export default function DevisKanban({ devis, clientsById, profilesById }: DevisKanbanProps) {
+export default function DevisKanban({
+  devis,
+  clientsById,
+  profilesById,
+  financialEntries = [],
+  services = [],
+}: DevisKanbanProps) {
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  // Indexar financial_entries por devis.id (matching via reference_number OU id no document_reference)
+  const feByDevis = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    const byRef: Record<string, string> = {};
+    devis.forEach((d: any) => {
+      if (d.reference_number) byRef[d.reference_number] = d.id;
+      byRef[d.id] = d.id;
+    });
+    financialEntries.forEach((fe: any) => {
+      const ref = fe.document_reference;
+      if (!ref) return;
+      const devisId = byRef[ref];
+      if (!devisId) return;
+      (map[devisId] ??= []).push(fe);
+    });
+    return map;
+  }, [devis, financialEntries]);
+
+  const svcByDevis = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    services.forEach((s: any) => {
+      if (!s.devis_id) return;
+      (map[s.devis_id] ??= []).push(s);
+    });
+    return map;
+  }, [services]);
+
+  // Agrupar cards por coluna usando getColumnsForDevis
   const grouped = useMemo(() => {
     const map: Record<string, any[]> = {};
     PIPELINE_STATUSES.forEach((s) => (map[s] = []));
     devis.forEach((d: any) => {
-      if (map[d.status]) map[d.status].push(d);
+      const cols = getColumnsForDevis(d, feByDevis, svcByDevis);
+      const derived = !!d.accepted_at && !d.rejected_at;
+      const hasCharge = (feByDevis[d.id] ?? []).length > 0;
+      const hasService = (svcByDevis[d.id] ?? []).length > 0;
+      cols.forEach((col) => {
+        if (!map[col]) return;
+        map[col].push({
+          devis: d,
+          derived,
+          presentColumns: cols,
+          hasCharge,
+          hasService,
+        });
+      });
     });
     return map;
-  }, [devis]);
+  }, [devis, feByDevis, svcByDevis]);
 
-  const activeDevis = devis.find((d: any) => d.id === activeId);
+  const activeDevis = useMemo(() => {
+    if (!activeId) return null;
+    const [id] = activeId.split("::");
+    return devis.find((d: any) => d.id === id) ?? null;
+  }, [activeId, devis]);
 
   const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
 
@@ -137,23 +308,21 @@ export default function DevisKanban({ devis, clientsById, profilesById }: DevisK
     const { active, over } = e;
     if (!over) return;
     const newStatus = String(over.id);
-    const card = devis.find((d: any) => d.id === active.id);
+    const [activeIdStr] = String(active.id).split("::");
+    const card = devis.find((d: any) => d.id === activeIdStr);
     if (!card || card.status === newStatus) return;
     if (!PIPELINE_STATUSES.includes(newStatus as any)) return;
 
-    // Bloqueio: proposta já recusada pelo cliente — não pode mudar
-    if (card.rejected_at && newStatus !== "rejeitada") {
-      toast.error("Esta proposta foi recusada pelo cliente — não é possível movê-la.");
+    // Bloqueio: cards aceitos/rejeitados não são arrastáveis (só aparecem como derivados)
+    if (card.accepted_at || card.rejected_at) {
+      toast.info("Esta proposta avançou no funil — colunas pós-aceite são atualizadas automaticamente.");
       return;
     }
 
-    // Bloqueio: proposta já aceita pelo cliente — só avança no funil pós-aceite
-    if (card.accepted_at) {
-      const allowedAfterAccept = ["aceita", "cobranca_pendente", "entrada_recebida", "enviado_para_operacao"];
-      if (!allowedAfterAccept.includes(newStatus)) {
-        toast.error("Esta proposta já foi aceita pelo cliente — não é possível voltar para etapas anteriores.");
-        return;
-      }
+    // Bloqueio: arrastar de pré-aceite para coluna derivada não é permitido
+    if (DERIVED_COLUMNS.has(newStatus)) {
+      toast.error("Esta coluna é preenchida automaticamente após o aceite do cliente.");
+      return;
     }
 
     // Bloqueio: status que exige validação comercial
@@ -188,9 +357,10 @@ export default function DevisKanban({ devis, clientsById, profilesById }: DevisK
           <Column
             key={status}
             status={status}
-            devis={grouped[status]}
+            items={grouped[status]}
             clientsById={clientsById}
             profilesById={profilesById}
+            isDerivedColumn={DERIVED_COLUMNS.has(status)}
           />
         ))}
       </div>

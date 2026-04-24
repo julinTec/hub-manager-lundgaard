@@ -115,6 +115,32 @@ export default function Comercial() {
     },
   });
 
+  // Financial entries ligadas a devis (via document_reference = reference_number OU id)
+  const { data: devisFinancialEntries = [] } = useQuery({
+    queryKey: ["devis-financial-entries"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("financial_entries")
+        .select("id, document_reference, conciliation_status, amount_in")
+        .not("document_reference", "is", null);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  // Services ligados a devis
+  const { data: devisServices = [] } = useQuery({
+    queryKey: ["devis-services"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, devis_id, status")
+        .not("devis_id", "is", null);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   // Realtime: mantém Kanban e lista sincronizados com mudanças do banco
   useEffect(() => {
     const channel = supabase
@@ -124,6 +150,20 @@ export default function Comercial() {
         { event: "*", schema: "public", table: "devis" },
         () => {
           queryClient.invalidateQueries({ queryKey: ["devis"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "financial_entries" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["devis-financial-entries"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "services" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["devis-services"] });
         },
       )
       .subscribe();
@@ -475,7 +515,13 @@ export default function Comercial() {
           />
 
           {view === "kanban" ? (
-            <DevisKanban devis={filteredDevis} clientsById={clientsById} profilesById={profilesById} />
+            <DevisKanban
+              devis={filteredDevis}
+              clientsById={clientsById}
+              profilesById={profilesById}
+              financialEntries={devisFinancialEntries}
+              services={devisServices}
+            />
           ) : (
             <Card>
               <Table>
