@@ -511,6 +511,8 @@ export default function DevisDetail() {
           onDismiss={() => setAiSuggestions(null)}
         />
       )}
+
+      <SendDevisDialog open={sendOpen} onOpenChange={setSendOpen} devis={devis} client={client} />
     </div>
   );
 }
