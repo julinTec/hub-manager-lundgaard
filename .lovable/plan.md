@@ -1,153 +1,85 @@
 
 
-# Plano: Upload de Ata/Relatório com IA para criar Cliente + Devis automaticamente
+# Plano: Formatação BRL, status clicável e export PDF padrão Lundgaard Jensen
 
-## Objetivo
+## 1. Formatação dos valores em BRL com pontos e vírgulas
 
-Adicionar na página **Comercial** um fluxo automático que recebe uma **Ata de reunião** (PDF ou DOCX) em **PT / FR / EN / ES**, extrai dados via IA e:
-1. Identifica o cliente (se já existe → vincula; se não → propõe criar)
-2. Estrutura uma nova **Devis** seguindo o padrão do contrato `DE202511065` (objeto, escopo de serviços com itens A, B, C..., valores, responsáveis)
-3. Abre o modal "Novo Devis" pré-preenchido para revisão e salvamento
+**Problema:** No modal "Novo Devis" e na edição, os campos `Valor total` e `Valor de entrada` mostram `100000` e `50000.00` (puro). O usuário quer `100.000,00` e `50.000,00` no padrão pt-BR (ponto = milhar, vírgula = decimal).
 
-## UX — Tela Comercial
+**Solução:** criar um componente `CurrencyInputBRL` em `src/components/ui/currency-input-brl.tsx` que:
+- Mostra o valor formatado como `100.000,00` enquanto o usuário digita
+- Internamente armazena o número (como string em centavos ou float) e expõe `value: number`
+- Aceita digitação livre (ignora não-dígitos, divide por 100 para definir os decimais)
 
-### Novo botão na aba "Devis"
+Aplicar nos pontos onde hoje aparece `<Input type="number">` para valores monetários:
+- `src/pages/Comercial.tsx` → modal Novo Devis (Valor total, Valor de entrada)
+- `src/pages/DevisDetail.tsx` → edição (Valor total, Valor de entrada)
+- Qualquer outro form de Financeiro / Operação que use moeda (verificar e aplicar para consistência)
 
-```text
-[ToggleGroup Lista|Kanban]   [📤 Upload de Relatório / Ata]  [+ Novo Devis]
-```
+A leitura permanece com `fmtBRL()` (Intl pt-BR), que já está correta — só os **inputs** estão mostrando o número cru.
 
-### Fluxo do dialog "Upload de Relatório / Ata"
+## 2. Status alterável diretamente ao clicar (sem precisar abrir "Editar")
 
-```text
-Passo 1: Upload         →  Passo 2: Análise IA      →  Passo 3: Revisão
-─────────────────────       ──────────────────────       ────────────────────
-Drop/select arquivo         Spinner "Analisando         Card cliente:
-(.pdf .docx .doc .txt)      em [idioma detectado]"        ✓ Existe: João Silva
-Idioma: Auto / PT/FR/                                     ✗ Novo: [form pré-preenchido]
-EN/ES (override)                                        Card devis:
-                                                          [campos pré-preenchidos]
-                                                        [Confirmar e abrir Devis]
-```
+**Problema:** Em `/comercial/devis/:id`, o badge de status só vira `Select` quando o usuário aperta "Editar".
 
-Ao confirmar → cria cliente (se novo) e abre o modal **Novo Devis** já existente, com todos os campos preenchidos (incluindo `service_type`, `responsible_sector`, `scope_description`, `proposal_structure`, `total_amount`).
+**Solução em `src/pages/DevisDetail.tsx`:**
+- Substituir o badge somente-leitura por um **`Popover`** (ou `DropdownMenu`) clicável que mostra a lista de status disponíveis, com indicação de bloqueio (🔒) para os que exigem validação.
+- Ao escolher um novo status: chamar `supabase.from("devis").update({ status }).eq("id", id)` direto, exibir toast e invalidar queries — sem entrar no modo edição global.
+- Manter a regra `requiresValidation(status) && !devis.validated_at` → desabilitar a opção e mostrar tooltip "Valide a proposta antes".
+- Cursor `pointer` + hover sutil no badge para indicar que é clicável.
 
-## Estrutura da Devis gerada (espelhando DE202511065)
+(Opcional, mesma feature no Kanban: já funciona via drag — não mexer.)
 
-A IA preenche `proposal_structure` em markdown seguindo este molde:
+## 3. Exportar Devis em PDF no padrão do contrato Lundgaard Jensen
 
-```text
-## I. Identificação das Partes
-CONTRATANTE: {client_name}
-CONTRATADO: Lundgaard Jensen Advocacia...
+**Referência:** documento `DE202511065` em anexo — contrato bilíngue PT/FR com:
+- Cabeçalho com logo Lundgaard Jensen (mundo dourado) e título grande
+- Seções numeradas (I. Identificação, II. Objeto, escopo A/B/C com valores, III. Honorários, IV. Prazo)
+- Rodapé fixo: `Rua João Cordeiro, 831 – Praia de Iracema | +55 (85) 9 94066042 | +55 (85) 9 30379931` + paginação `Página X de Y`
+- Última página com bloco de assinatura: `LUNDGAARD JENSEN ADVOCACIA E CONSULTORIA INTERNACIONAL — CONTRATADO / LAW FIRM` + duas testemunhas (Nome / CPF / Assinatura)
+- Marca `lundgaardjensen.com | @lundgaard.jensen DE{numero}` no rodapé direito
 
-## II. Objeto do Contrato
-{descrição geral}
+### Implementação
 
-### Escopo de Serviços
-A) {Serviço 1} — BRL {valor}
-   {descrição detalhada}
-B) {Serviço 2} — BRL {valor}
-   ...
+**a) Novo botão "Exportar PDF"** em `src/pages/DevisDetail.tsx` (cabeçalho, ao lado de "Editar"). Habilitado sempre.
 
-## III. Honorários
-Total: BRL {total}
-Entrada (50%): BRL {down}
+**b) Novo componente `src/components/devis/DevisPdfTemplate.tsx`** — uma página HTML/CSS estilizada (A4, margens, fontes serif para contrato), renderizada num container fora-da-tela (`position: absolute; left: -9999px`) que reproduz fielmente o template:
+- Cabeçalho com logo (`src/assets/logo-banner.png` já existe)
+- Título "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS" (ou versão FR/EN/ES baseada no idioma detectado, se houver — fallback PT)
+- Seção I — dados do cliente (nome, documento, endereço se disponível)
+- Seção I — dados fixos do contratado (Lundgaard Jensen completo, conforme o anexo)
+- Seção II — Objeto + parser do `proposal_structure` ou `scope_description` para listar itens A, B, C com valores em `BRL X.XXX,XX`
+- Seção III — Honorários (total + entrada 50%)
+- Seção IV — Prazo (deadline_date)
+- Rodapé com endereço/contatos + número `DE{ano}{mes}{seq}` (gerar a partir do `id` ou criar coluna `devis_number` — ver técnica abaixo)
+- Página final com assinaturas + testemunhas
 
-## IV. Prazo
-{prazo estimado}
-```
+**c) Geração do PDF** com `html2canvas` + `jspdf` (libs leves, client-side, sem dependência de servidor):
+- Adicionar via `npm` (já permitido)
+- Renderizar o template, capturar como canvas, gerar PDF A4 multipágina
+- Nome do arquivo: `Devis-{numero}-{cliente}.pdf`
 
-Versão bilíngue PT/FR opcional quando o idioma da ata não for português (segue o padrão do anexo).
+**d) Numeração da Devis (`DE{AAAA}{MM}{NNN}`):**
+- Adicionar coluna `devis_number TEXT UNIQUE` em `public.devis` via migration
+- Trigger BEFORE INSERT que gera o número sequencial do mês: `'DE' || to_char(now(),'YYYYMM') || lpad(seq::text,3,'0')`
+- Para devis já existentes: backfill com base em `created_at`
+- Exibir o número no cabeçalho do detalhe e na lista
 
-## Implementação técnica
+**e) Idioma do contrato:** se `proposal_structure` contém marcadores em FR/EN/ES (já gerados pela edge function `analyze-meeting-report`), o template detecta e troca os títulos das seções automaticamente (mapa pt→fr/en/es). Versão bilíngue (PT + FR lado a lado) fica para uma evolução futura — nesta entrega entregamos **um idioma por export**, escolhido automaticamente pelo conteúdo.
 
-### 1. Edge Function nova: `analyze-meeting-report`
+## Arquivos afetados
 
-Recebe `{ file_base64, file_name, mime_type, language_hint }`. Faz:
+- **Criar:** `src/components/ui/currency-input-brl.tsx`
+- **Criar:** `src/components/devis/DevisPdfTemplate.tsx`
+- **Criar:** `src/lib/exportDevisPdf.ts` (helper html2canvas + jspdf)
+- **Editar:** `src/pages/Comercial.tsx` (usar CurrencyInputBRL no modal)
+- **Editar:** `src/pages/DevisDetail.tsx` (CurrencyInputBRL, status clicável via Popover, botão Exportar PDF, exibir devis_number)
+- **Migration:** adicionar `devis_number` + trigger + backfill
+- **Dependências novas:** `html2canvas`, `jspdf`
 
-- **Extração de texto** do arquivo:
-  - `.txt` → direto
-  - `.pdf` → `pdf-parse` via esm.sh
-  - `.docx` → `mammoth` via esm.sh
-- **Detecção de idioma** (heurística + IA confirma)
-- **Chamada Lovable AI** (`google/gemini-2.5-pro` para qualidade multilíngue) com tool calling estruturado:
+## Fora do escopo (posso fazer depois se quiser)
 
-```json
-{
-  "name": "extract_meeting_data",
-  "parameters": {
-    "detected_language": "pt|fr|en|es",
-    "client": {
-      "name": "...", "email": "...", "phone": "...",
-      "document": "...", "type": "PF|PJ", "address": "...",
-      "city": "...", "notes": "..."
-    },
-    "meeting": {
-      "date": "YYYY-MM-DD", "summary": "...", "report": "..."
-    },
-    "devis": {
-      "title": "...",
-      "service_type": "...",
-      "responsible_sector": "...",
-      "scope_description": "markdown",
-      "proposal_structure": "markdown completo no padrão DE202511065",
-      "scope_items": [
-        { "letter": "A", "title": "...", "description": "...", "amount": 1100 }
-      ],
-      "total_amount": 0,
-      "deadline_date": "YYYY-MM-DD"
-    }
-  }
-}
-```
-
-System prompt instrui: responder no **idioma do documento** para `summary`, `report`, `scope_description` e `proposal_structure`; estruturar SEMPRE no formato do contrato Lundgaard Jensen; calcular total como soma dos itens.
-
-### 2. Match de cliente no frontend
-
-Após receber resposta da edge function, busca em `clients`:
-- Match por `document` (CPF/CNPJ) → exato
-- Match por `email` → exato
-- Match por `name` (similaridade fuzzy simples) → sugestão "Talvez seja: ..."
-
-Mostra card:
-- ✅ **Cliente encontrado**: vincula `client_id`
-- ⚠️ **Possível match**: usuário escolhe vincular ou criar novo
-- ➕ **Novo cliente**: form pré-preenchido editável
-
-### 3. Componente novo: `src/components/devis/UploadAtaDialog.tsx`
-
-Steps com `Tabs` interno ou estado local:
-- Step 1: Dropzone (`<input type=file>` simples + drag) + select de idioma
-- Step 2: Loading com `Loader2`
-- Step 3: Cards de revisão (cliente + devis) + botão "Abrir formulário Devis"
-
-### 4. Integração com modal existente
-
-Adicionar prop opcional ao state `devisForm` para receber os dados pré-preenchidos, e setar `aiAccepted` automaticamente com os campos da IA antes de abrir o `Dialog Novo Devis`.
-
-### 5. Sem upload para Storage (por ora)
-
-O arquivo é processado em memória na edge function e descartado. Apenas o texto extraído fica em `meeting_report`. Isso evita criar bucket e mantém simples. **Se quiser arquivar o PDF original, posso adicionar storage depois.**
-
-## Idiomas suportados
-
-A IA recebe instrução explícita: *"Detect language among PT/FR/EN/ES. Extract data and produce summary/scope IN THE SAME LANGUAGE as the source document, but ALWAYS use the Lundgaard Jensen contract structure (Identificação/Objeto/Escopo A,B,C/Honorários/Prazo) — translate the section titles to the detected language."*
-
-Treinamento adicional via **few-shot examples** no system prompt: incluo trechos do contrato `DE202511065` (PT + FR) como referência de formato.
-
-## Arquivos a criar / editar
-
-- **Criar** `supabase/functions/analyze-meeting-report/index.ts`
-- **Criar** `src/components/devis/UploadAtaDialog.tsx`
-- **Editar** `src/pages/Comercial.tsx` — adicionar botão e wiring com modal Novo Devis
-
-## Fora do escopo (posso fazer depois)
-
-- Geração do PDF final da Devis no formato do contrato (assinatura, logo, paginação) — hoje só estruturamos o texto
-- Storage do arquivo original da ata
-- OCR de PDFs escaneados (apenas PDFs com texto nativo serão suportados nesta entrega)
-
-Aprove para eu implementar.
+- Versão bilíngue PT/FR lado a lado no mesmo PDF
+- Assinatura digital / e-sign integrado
+- Salvar PDF gerado no Storage automaticamente
 
