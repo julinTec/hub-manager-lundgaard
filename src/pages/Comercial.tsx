@@ -211,6 +211,34 @@ export default function Comercial() {
       setGenerating(false);
     }
   };
+
+  const handleAtaConfirm = ({ client_id, payload }: ConfirmedAtaResult) => {
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    const total = payload.devis.total_amount || 0;
+    const meetingDate = payload.meeting.date ? new Date(payload.meeting.date + "T00:00:00") : undefined;
+    setDevisForm({
+      client_id,
+      meeting_date: isNaN(meetingDate?.getTime() ?? NaN) ? undefined : meetingDate,
+      commercial_responsible: user?.id || "",
+      meeting_summary: payload.meeting.summary || "",
+      meeting_report: payload.meeting.report || "",
+      status: "rascunho",
+      total_amount: total ? String(total) : "",
+      down_payment_amount: total ? String((total * 0.5).toFixed(2)) : "",
+      notes: "",
+      title: payload.devis.title || "",
+    });
+    setAiAccepted({
+      service_type: payload.devis.service_type || "",
+      responsible_sector: payload.devis.responsible_sector || "",
+      scope_description: payload.devis.scope_description || "",
+      proposal_structure: payload.devis.proposal_structure || "",
+    });
+    setAiSuggestions(null);
+    setDevisDialogOpen(true);
+    toast.success("Devis pré-preenchido. Revise e salve.");
+  };
+
   const openEditClient = (c: any) => {
     setClientForm({
       id: c.id,
