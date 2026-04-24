@@ -86,6 +86,7 @@ export default function Comercial() {
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestions | null>(null);
   const [aiAccepted, setAiAccepted] = useState<Partial<AISuggestions>>({});
   const [generating, setGenerating] = useState(false);
+  const [uploadAtaOpen, setUploadAtaOpen] = useState(false);
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: async () => {
