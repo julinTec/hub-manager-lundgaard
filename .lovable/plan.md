@@ -1,114 +1,92 @@
 
 
-# Implementação: Envio de proposta via Resend (conector nativo)
+# Ajustes finais: pipeline + aceite + visual + botão Rejeitar
 
-Ajuste no plano: vamos usar o **conector Resend** do Lovable em vez de secret manual — mais seguro e é o padrão recomendado.
+## 1. Auto-transição "Enviada ao cliente" → "Aguardando aceite" (30s)
 
-## Passo 0 — Segurança (faça agora)
+- Habilitar extensão `pg_cron` no banco.
+- Criar job que roda a cada 15s:
+  ```sql
+  UPDATE devis
+     SET status = 'aguardando_aceite'
+   WHERE status = 'enviada_ao_cliente'
+     AND sent_at < now() - interval '30 seconds';
+  ```
+- Habilitar **Realtime** na tabela `devis` (`ALTER PUBLICATION supabase_realtime ADD TABLE devis`).
+- Em `src/pages/Comercial.tsx`: assinar `postgres_changes` e invalidar a query `['devis']` em qualquer mudança → Kanban atualiza sozinho.
 
-1. Acesse resend.com/api-keys
-2. **Revogue** a key `re_jQ1DP3MN_…` (já está exposta neste chat)
-3. Quando eu abrir o conector, você cria/cola uma key nova num campo seguro
+## 2. Aceite vai para "Aceita" (e fica lá)
 
-## Passo 1 — Conectar o Resend (eu abro o dialog)
+- Editar `supabase/functions/accept-devis-proposal/index.ts`: trocar `status: 'cobranca_pendente'` por `status: 'aceita'`.
+- Cobrança 50% e criação do `service` continuam acontecendo no aceite (sem mudança).
+- Transição `aceita` → `cobranca_pendente` passa a ser manual (arrastar no Kanban).
 
-Abro o `connect` do conector Resend. Você:
-- Cria conta gratuita em resend.com (se ainda não tem)
-- Gera uma API key nova
-- Cola no dialog do conector (campo seguro, não fica no chat)
+## 3. Novo botão "Rejeitar proposta" no e-mail e na página pública
 
-A chave fica disponível como `RESEND_API_KEY` nas edge functions, roteada via `https://connector-gateway.lovable.dev/resend`.
+### Edge function `accept-devis-proposal` — adicionar ação `reject`
 
-## Limitação do remetente provisório
-
-Sem domínio verificado, o Resend opera em **modo de teste**:
-- E-mail sai de `onboarding@resend.dev`
-- **Só consegue enviar para o e-mail cadastrado na sua conta Resend** (geralmente o seu próprio)
-- Para clientes reais → precisa verificar um domínio depois
-
-Bom pra validar o fluxo agora; quando tiver domínio, troca o `from` em 1 linha.
-
-## Implementação
+- Aceitar `?action=reject` no POST.
+- Quando `action=reject`:
+  - Validar token, exigir `accepted_at IS NULL` e `rejected_at IS NULL`.
+  - `UPDATE devis SET status='rejeitada', rejected_at=now(), rejected_ip=<ip> WHERE id=...`.
+  - **Não** cria cobrança nem service.
+  - Registra `audit_logs` com ação `devis_rejected_by_client`.
+- GET continua só retornando o preview (inclui agora `rejected_at`).
 
 ### Migration
-- `ALTER TABLE devis ADD COLUMN sent_at TIMESTAMPTZ NULL` (se ainda não existir)
 
-### Edge function `send-devis-proposal`
-- Valida JWT do usuário interno
-- Recebe: `devis_id`, `to[]`, `subject`, `message_text`, `pdf_base64`, `pdf_filename`, `accept_url`, `client_name`, `devis_number`, `language`
-- Validação Zod de todos os campos
-- Monta HTML do e-mail:
-  - Cabeçalho Lundgaard Jensen
-  - Mensagem (vinda do dialog, escapada)
-  - **Botão verde grande "Aceitar Proposta"** linkando pro `accept_url`
-  - Rodapé com endereço/contatos
-- Envia via gateway Resend (`POST /emails`) com:
-  - `from: "Lundgaard Jensen <onboarding@resend.dev>"`
-  - `to`, `subject`, `html`, `text` (fallback)
-  - `attachments: [{ filename, content: pdf_base64 }]`
-- Em sucesso: `UPDATE devis SET sent_at = now(), status = 'enviada_ao_cliente' WHERE id = devis_id`
-- Insere linha em `audit_logs` com ação `devis_email_sent`
-- Retorna `{ success, message_id }` ou erro detalhado (incluindo o caso "modo de teste, destinatário não permitido" com instrução clara)
+- `ALTER TABLE devis ADD COLUMN rejected_at TIMESTAMPTZ NULL`
+- `ALTER TABLE devis ADD COLUMN rejected_ip TEXT NULL`
 
-### Frontend — `src/lib/exportDevisPdf.ts`
-- Adicionar `generateDevisPdfBase64(container, fileName): Promise<{ base64, filename }>` (mesma lógica do export, retorna base64)
+### `src/pages/AceitarProposta.tsx` — dois botões lado a lado
 
-### Frontend — `src/components/devis/SendDevisDialog.tsx` (novo)
-- **Para** (pré-preenchido com `client.email`, editável; aceita múltiplos separados por vírgula)
-- **Assunto** (pré-preenchido: `Proposta {devis_number} — Lundgaard Jensen`)
-- **Mensagem** (textarea editável, texto padrão por idioma PT/FR/EN/ES detectado do `proposal_structure`)
-- **Preview do link de aceite** (`{origin}/aceitar-proposta/{token}`) — visível, não editável
-- Aviso amarelo: *"Modo de teste do Resend: só envia para o e-mail cadastrado na sua conta Resend. Para clientes reais, verifique um domínio em resend.com/domains."*
-- Botão "Enviar agora" → renderiza PDF off-screen → base64 → invoca `send-devis-proposal`
+- Botão verde **"Aceitar proposta"** (existente) à esquerda.
+- Botão vermelho outline **"Recusar proposta"** à direita.
+- Ao clicar em Recusar → modal de confirmação ("Tem certeza? Esta ação não pode ser desfeita.") com campo opcional de motivo (texto livre, salvo em `audit_logs.details.reason`).
+- Estados novos: `rejecting`, `rejected`, `already_rejected`.
+- Card de sucesso vermelho quando rejeitada: "Proposta recusada. Agradecemos seu retorno."
+- Se já rejeitada/aceita ao abrir o link → mostra o estado final, esconde os botões.
 
-### Frontend — `src/pages/DevisDetail.tsx`
-- Botão verde **"📧 Enviar ao cliente"** ao lado de "Exportar PDF"
-- Visível só quando `status === 'pronta_para_envio'`
-- Abre `SendDevisDialog`
-- Em sucesso: toast + `queryClient.invalidateQueries(['devis', id])` (status atualiza pra "Enviada ao cliente")
+### E-mail (`send-devis-proposal/index.ts`)
 
-### Texto padrão (4 idiomas)
+- No HTML, ao lado do botão verde "Aceitar Proposta", adicionar botão **"Recusar"** (link para a mesma URL `/aceitar-proposta/:token`, o cliente decide na página).
+- Visual: dois botões em uma linha (`<table>` lado a lado, padrão React Email/HTML email para compatibilidade), verde + cinza/vermelho outline.
+- Texto do e-mail (4 idiomas) ajustado: "Você pode aceitar ou recusar a proposta clicando nos botões abaixo."
 
+> Decisão de design: **manter um único link** (`/aceitar-proposta/:token`) e a escolha aceitar/recusar acontece na página, não no e-mail. Motivo: evita aceite/recusa acidental por preview de e-mail (alguns clientes pré-carregam links GET) e dá ao cliente a chance de revisar a proposta antes de decidir. Os dois botões no e-mail dão a sinalização visual; ambos levam para a mesma página.
+
+## 4. Visual da página pública mais clean/profissional
+
+- Header maior: logo Lundgaard Jensen + nome em tipografia elegante, divisor sutil.
+- Espaçamentos e tipografia refinados (max-width menor, mais respiro).
+- Footer com endereço e contato da empresa.
+- Garantir que nada na página remeta a "demo".
+
+## 5. Logo grande do Lovable na URL do cliente
+
+- **Publicar o projeto** com `hide_badge = true` (Opção A — requer plano Pro).
+- URL passa a ser `*.lovable.app` sem barra grande.
+- Se não estiver no Pro, te aviso para fazer upgrade ou usamos Opção C (badge pequeno) provisoriamente.
+
+## Pipeline de status (atualizado)
+
+```text
+... → enviada_ao_cliente → (30s) → aguardando_aceite → ┬→ aceita → cobranca_pendente → ...
+                                                       └→ rejeitada (cliente clicou Recusar)
 ```
-Prezado(a) {client_name},
-
-Conforme conversado, segue em anexo a proposta {devis_number} da
-Lundgaard Jensen Advocacia e Consultoria Internacional.
-
-Para aceitar a proposta de forma rápida e segura, clique no botão
-"Aceitar Proposta" abaixo.
-
-Permanecemos à disposição.
-
-Atenciosamente,
-Equipe Lundgaard Jensen
-```
-
-(Equivalentes em FR / EN / ES.)
-
-## Fluxo do cliente (sem travas — já funciona)
-
-1. Recebe e-mail com PDF anexo + botão verde "Aceitar Proposta"
-2. Clica no botão → cai em `/aceitar-proposta/:token` (página pública existente)
-3. Confirma → status vira `cobranca_pendente`, cobrança 50% e serviço criados automaticamente
 
 ## Arquivos afetados
 
-- **Conectar:** Resend (conector nativo, via dialog)
-- **Migration:** `devis.sent_at` (se necessário)
-- **Criar:** `supabase/functions/send-devis-proposal/index.ts`
-- **Criar:** `src/components/devis/SendDevisDialog.tsx`
-- **Editar:** `src/lib/exportDevisPdf.ts` (helper base64)
-- **Editar:** `src/pages/DevisDetail.tsx` (botão + integração)
+- **Migration:** habilitar `pg_cron` + job de auto-transição; habilitar Realtime em `devis`; adicionar `rejected_at` e `rejected_ip`.
+- **Editar:** `supabase/functions/accept-devis-proposal/index.ts` (status `aceita` + ação `reject`).
+- **Editar:** `supabase/functions/send-devis-proposal/index.ts` (botão Rejeitar no HTML, copy 4 idiomas).
+- **Editar:** `src/pages/AceitarProposta.tsx` (dois botões + modal de recusa + estados + visual refinado).
+- **Editar:** `src/pages/Comercial.tsx` (subscribe realtime).
+- **Publish settings:** ocultar badge + publicar.
 
-## Próximos passos após aprovar
+## Fora do escopo
 
-1. Você revoga a key exposta em resend.com/api-keys
-2. Eu abro o dialog do conector Resend
-3. Você cria/cola uma key nova no campo seguro
-4. Eu sigo com toda a implementação automaticamente
-
-## Evolução futura (quando tiver domínio)
-
-Trocar `from: "onboarding@resend.dev"` por `from: "noreply@seudominio.com"` — 1 linha, zero mudança no resto.
+- Auto-transição `aceita` → `cobranca_pendente`.
+- Domínio próprio (`app.lundgaardjensen.com`).
+- Bloquear arrasto retroativo no Kanban (ex: impedir voltar de `aceita` para colunas anteriores).
 
