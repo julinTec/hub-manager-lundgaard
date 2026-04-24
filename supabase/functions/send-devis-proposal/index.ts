@@ -25,16 +25,32 @@ const BodySchema = z.object({
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-const BUTTON_LABEL: Record<string, string> = {
+const ACCEPT_LABEL: Record<string, string> = {
   pt: "Aceitar Proposta",
   fr: "Accepter la Proposition",
   en: "Accept Proposal",
   es: "Aceptar la Propuesta",
 };
 
+const REJECT_LABEL: Record<string, string> = {
+  pt: "Recusar",
+  fr: "Refuser",
+  en: "Decline",
+  es: "Rechazar",
+};
+
+const HELPER_LABEL: Record<string, string> = {
+  pt: "Você pode aceitar ou recusar a proposta clicando nos botões abaixo.",
+  fr: "Vous pouvez accepter ou refuser la proposition en cliquant sur les boutons ci-dessous.",
+  en: "You can accept or decline the proposal by clicking the buttons below.",
+  es: "Puede aceptar o rechazar la propuesta haciendo clic en los botones a continuación.",
+};
+
 function buildHtml(message_text: string, accept_url: string, language: string) {
   const safeMsg = escapeHtml(message_text).replace(/\n/g, "<br/>");
-  const btn = BUTTON_LABEL[language] || BUTTON_LABEL.pt;
+  const accept = ACCEPT_LABEL[language] || ACCEPT_LABEL.pt;
+  const reject = REJECT_LABEL[language] || REJECT_LABEL.pt;
+  const helper = HELPER_LABEL[language] || HELPER_LABEL.pt;
   return `<!doctype html>
 <html><body style="margin:0;background:#f5f5f5;font-family:Arial,sans-serif;color:#222">
   <div style="max-width:620px;margin:0 auto;background:#ffffff;padding:32px 28px">
@@ -43,9 +59,17 @@ function buildHtml(message_text: string, accept_url: string, language: string) {
       <div style="font-size:11px;color:#666;letter-spacing:2px">ADVOCACIA &amp; CONSULTORIA INTERNACIONAL</div>
     </div>
     <div style="font-size:14px;line-height:1.6;color:#333">${safeMsg}</div>
-    <div style="text-align:center;margin:32px 0">
-      <a href="${accept_url}" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-weight:bold;padding:14px 28px;border-radius:6px;font-size:15px">${btn}</a>
-    </div>
+    <p style="font-size:13px;color:#555;text-align:center;margin:28px 0 12px">${helper}</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 8px">
+      <tr>
+        <td style="padding:0 8px">
+          <a href="${accept_url}" style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-weight:bold;padding:14px 28px;border-radius:6px;font-size:15px">${accept}</a>
+        </td>
+        <td style="padding:0 8px">
+          <a href="${accept_url}" style="display:inline-block;background:#ffffff;color:#b91c1c;border:1.5px solid #b91c1c;text-decoration:none;font-weight:bold;padding:13px 26px;border-radius:6px;font-size:15px">${reject}</a>
+        </td>
+      </tr>
+    </table>
     <div style="font-size:11px;color:#888;margin-top:32px;border-top:1px solid #eee;padding-top:16px;line-height:1.5">
       Rua João Cordeiro, 831 – Praia de Iracema<br/>
       +55 (85) 9 9406-6042 &nbsp;|&nbsp; +55 (85) 9 3037-9931<br/>
@@ -56,8 +80,10 @@ function buildHtml(message_text: string, accept_url: string, language: string) {
 }
 
 function buildText(message_text: string, accept_url: string, language: string) {
-  const btn = BUTTON_LABEL[language] || BUTTON_LABEL.pt;
-  return `${message_text}\n\n${btn}: ${accept_url}\n\n--\nLundgaard Jensen Advocacia & Consultoria Internacional\nRua João Cordeiro, 831 – Praia de Iracema\n+55 (85) 9 9406-6042 | +55 (85) 9 3037-9931`;
+  const accept = ACCEPT_LABEL[language] || ACCEPT_LABEL.pt;
+  const reject = REJECT_LABEL[language] || REJECT_LABEL.pt;
+  const helper = HELPER_LABEL[language] || HELPER_LABEL.pt;
+  return `${message_text}\n\n${helper}\n${accept} / ${reject}: ${accept_url}\n\n--\nLundgaard Jensen Advocacia & Consultoria Internacional\nRua João Cordeiro, 831 – Praia de Iracema\n+55 (85) 9 9406-6042 | +55 (85) 9 3037-9931`;
 }
 
 Deno.serve(async (req) => {

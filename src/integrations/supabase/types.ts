@@ -309,6 +309,8 @@ export type Database = {
           notes: string | null
           proposal_structure: string | null
           reference_number: string | null
+          rejected_at: string | null
+          rejected_ip: string | null
           responsible_sector: string | null
           scope_description: string | null
           sent_at: string | null
@@ -348,6 +350,8 @@ export type Database = {
           notes?: string | null
           proposal_structure?: string | null
           reference_number?: string | null
+          rejected_at?: string | null
+          rejected_ip?: string | null
           responsible_sector?: string | null
           scope_description?: string | null
           sent_at?: string | null
@@ -387,6 +391,8 @@ export type Database = {
           notes?: string | null
           proposal_structure?: string | null
           reference_number?: string | null
+          rejected_at?: string | null
+          rejected_ip?: string | null
           responsible_sector?: string | null
           scope_description?: string | null
           sent_at?: string | null
@@ -664,6 +670,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_advance_sent_devis: { Args: never; Returns: undefined }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
