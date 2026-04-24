@@ -1,74 +1,114 @@
 
 
-# Implementação: Botão "Enviar" com Lovable Emails (link de aceite + PDF)
+# Implementação: Envio de proposta via Resend (conector nativo)
 
-Você escolheu **Opção A — Lovable Emails (nativo)**. Vou implementar tudo de uma vez assim que aprovar.
+Ajuste no plano: vamos usar o **conector Resend** do Lovable em vez de secret manual — mais seguro e é o padrão recomendado.
 
-## Pré-requisito automático: domínio de envio
+## Passo 0 — Segurança (faça agora)
 
-Lovable Emails precisa de um subdomínio remetente (ex: `notify.lundgaardjensen.com`) verificado. Quando você aprovar, abro o dialog de configuração — você informa o domínio uma vez e o sistema:
-- Adiciona os registros NS no seu provedor de DNS (com instruções claras)
-- Provisiona SPF/DKIM/MX automaticamente
-- Cria toda a infra de fila/retry/log de envios
+1. Acesse resend.com/api-keys
+2. **Revogue** a key `re_jQ1DP3MN_…` (já está exposta neste chat)
+3. Quando eu abrir o conector, você cria/cola uma key nova num campo seguro
 
-Enquanto o DNS propaga (até 72h), o restante da implementação fica pronto e o sistema enfileira; assim que o domínio fica `active`, os e-mails saem.
+## Passo 1 — Conectar o Resend (eu abro o dialog)
 
-## O que vou implementar
+Abro o `connect` do conector Resend. Você:
+- Cria conta gratuita em resend.com (se ainda não tem)
+- Gera uma API key nova
+- Cola no dialog do conector (campo seguro, não fica no chat)
 
-### 1. Backend — fila e infraestrutura
-- Configurar infra de e-mails (fila pgmq + cron + tabelas de log/supressão/unsubscribe) — automático após o domínio
-- Criar template React Email `devis-proposal.tsx` em `supabase/functions/_shared/transactional-email-templates/`:
+A chave fica disponível como `RESEND_API_KEY` nas edge functions, roteada via `https://connector-gateway.lovable.dev/resend`.
+
+## Limitação do remetente provisório
+
+Sem domínio verificado, o Resend opera em **modo de teste**:
+- E-mail sai de `onboarding@resend.dev`
+- **Só consegue enviar para o e-mail cadastrado na sua conta Resend** (geralmente o seu próprio)
+- Para clientes reais → precisa verificar um domínio depois
+
+Bom pra validar o fluxo agora; quando tiver domínio, troca o `from` em 1 linha.
+
+## Implementação
+
+### Migration
+- `ALTER TABLE devis ADD COLUMN sent_at TIMESTAMPTZ NULL` (se ainda não existir)
+
+### Edge function `send-devis-proposal`
+- Valida JWT do usuário interno
+- Recebe: `devis_id`, `to[]`, `subject`, `message_text`, `pdf_base64`, `pdf_filename`, `accept_url`, `client_name`, `devis_number`, `language`
+- Validação Zod de todos os campos
+- Monta HTML do e-mail:
   - Cabeçalho Lundgaard Jensen
-  - Mensagem editável vinda do dialog
-  - **Botão verde grande "Aceitar Proposta"** linkando pra `{origin}/aceitar-proposta/{accept_token}`
-  - Link `📎 Baixar proposta em PDF` apontando pro arquivo no Storage
-  - Versões PT / FR / EN / ES
-- Registrar o template no `registry.ts`
-- Função `send-transactional-email` (criada pelo scaffold) cuida do envio
+  - Mensagem (vinda do dialog, escapada)
+  - **Botão verde grande "Aceitar Proposta"** linkando pro `accept_url`
+  - Rodapé com endereço/contatos
+- Envia via gateway Resend (`POST /emails`) com:
+  - `from: "Lundgaard Jensen <onboarding@resend.dev>"`
+  - `to`, `subject`, `html`, `text` (fallback)
+  - `attachments: [{ filename, content: pdf_base64 }]`
+- Em sucesso: `UPDATE devis SET sent_at = now(), status = 'enviada_ao_cliente' WHERE id = devis_id`
+- Insere linha em `audit_logs` com ação `devis_email_sent`
+- Retorna `{ success, message_id }` ou erro detalhado (incluindo o caso "modo de teste, destinatário não permitido" com instrução clara)
 
-### 2. Backend — armazenar o PDF
-- Migration: criar bucket privado `devis-pdfs` no Storage com RLS (só o autor da devis lê; service role escreve)
-- O cliente só precisa do link assinado de 30 dias — não vê o bucket diretamente
+### Frontend — `src/lib/exportDevisPdf.ts`
+- Adicionar `generateDevisPdfBase64(container, fileName): Promise<{ base64, filename }>` (mesma lógica do export, retorna base64)
 
-### 3. Frontend
-- **Novo componente** `src/components/devis/SendDevisDialog.tsx`:
-  - Campos: Para (pré-preenchido com e-mail do cliente, editável; aceita múltiplos), Assunto (pré-preenchido), Mensagem (textarea editável, 4 idiomas)
-  - Preview do link de aceite (`{origin}/aceitar-proposta/{token}`) — visível mas não editável
-  - Aviso: *"O link de aceite e o link do PDF serão adicionados automaticamente ao e-mail."*
-  - Botão "Enviar agora"
-- **Editar `src/lib/exportDevisPdf.ts`**: adicionar `generateDevisPdfBlob(container, fileName): Promise<Blob>` (mesma lógica, retorna Blob em vez de baixar)
-- **Editar `src/pages/DevisDetail.tsx`**:
-  - Botão verde **"📧 Enviar ao cliente"** ao lado de "Exportar PDF" — visível só quando `status === 'pronta_para_envio'`
-  - Handler: renderiza template off-screen → gera Blob do PDF → faz upload pro bucket `devis-pdfs/{devis_id}/{devis_number}.pdf` → cria signed URL (30 dias) → invoca `send-transactional-email` com `templateData: { client_name, devis_number, message_text, accept_url, pdf_url, language }`
-  - Em sucesso: registra `devis.sent_at` + muda `status` para `enviada_ao_cliente` + toast + invalidate queries
+### Frontend — `src/components/devis/SendDevisDialog.tsx` (novo)
+- **Para** (pré-preenchido com `client.email`, editável; aceita múltiplos separados por vírgula)
+- **Assunto** (pré-preenchido: `Proposta {devis_number} — Lundgaard Jensen`)
+- **Mensagem** (textarea editável, texto padrão por idioma PT/FR/EN/ES detectado do `proposal_structure`)
+- **Preview do link de aceite** (`{origin}/aceitar-proposta/{token}`) — visível, não editável
+- Aviso amarelo: *"Modo de teste do Resend: só envia para o e-mail cadastrado na sua conta Resend. Para clientes reais, verifique um domínio em resend.com/domains."*
+- Botão "Enviar agora" → renderiza PDF off-screen → base64 → invoca `send-devis-proposal`
 
-### 4. Migration
-- `ALTER TABLE devis ADD COLUMN sent_at TIMESTAMPTZ NULL`
-- Criar bucket `devis-pdfs` (privado) + políticas RLS
+### Frontend — `src/pages/DevisDetail.tsx`
+- Botão verde **"📧 Enviar ao cliente"** ao lado de "Exportar PDF"
+- Visível só quando `status === 'pronta_para_envio'`
+- Abre `SendDevisDialog`
+- Em sucesso: toast + `queryClient.invalidateQueries(['devis', id])` (status atualiza pra "Enviada ao cliente")
 
-## O fluxo do cliente (sem travas)
+### Texto padrão (4 idiomas)
 
-1. Recebe e-mail bonito, do seu domínio, em qualquer caixa de entrada
-2. Vê a mensagem + botão verde **"Aceitar Proposta"** + link **"Baixar PDF"**
-3. Clica em "Baixar PDF" → abre o contrato no padrão Lundgaard Jensen
-4. Clica em "Aceitar Proposta" → cai na página `/aceitar-proposta/:token` (já existente, sem login)
-5. Confirma → status vira `cobranca_pendente`, cobrança 50% e serviço criados (já implementado)
+```
+Prezado(a) {client_name},
+
+Conforme conversado, segue em anexo a proposta {devis_number} da
+Lundgaard Jensen Advocacia e Consultoria Internacional.
+
+Para aceitar a proposta de forma rápida e segura, clique no botão
+"Aceitar Proposta" abaixo.
+
+Permanecemos à disposição.
+
+Atenciosamente,
+Equipe Lundgaard Jensen
+```
+
+(Equivalentes em FR / EN / ES.)
+
+## Fluxo do cliente (sem travas — já funciona)
+
+1. Recebe e-mail com PDF anexo + botão verde "Aceitar Proposta"
+2. Clica no botão → cai em `/aceitar-proposta/:token` (página pública existente)
+3. Confirma → status vira `cobranca_pendente`, cobrança 50% e serviço criados automaticamente
 
 ## Arquivos afetados
 
-- **Setup:** infra de e-mails (automático) + bucket Storage
-- **Criar:** `supabase/functions/_shared/transactional-email-templates/devis-proposal.tsx`
-- **Editar:** `supabase/functions/_shared/transactional-email-templates/registry.ts`
+- **Conectar:** Resend (conector nativo, via dialog)
+- **Migration:** `devis.sent_at` (se necessário)
+- **Criar:** `supabase/functions/send-devis-proposal/index.ts`
 - **Criar:** `src/components/devis/SendDevisDialog.tsx`
-- **Editar:** `src/lib/exportDevisPdf.ts` (helper Blob)
+- **Editar:** `src/lib/exportDevisPdf.ts` (helper base64)
 - **Editar:** `src/pages/DevisDetail.tsx` (botão + integração)
-- **Migration:** `devis.sent_at` + bucket `devis-pdfs` + RLS
 
-## Fora do escopo (futuro)
+## Próximos passos após aprovar
 
-- Histórico de envios na tela do devis com botão "reenviar"
-- Tracking de abertura do e-mail
-- Realtime na devis pra atualizar sozinho quando o cliente aceitar (5 min — só pedir se quiser)
+1. Você revoga a key exposta em resend.com/api-keys
+2. Eu abro o dialog do conector Resend
+3. Você cria/cola uma key nova no campo seguro
+4. Eu sigo com toda a implementação automaticamente
 
-Aprove e eu sigo. Primeiro passo após aprovação: abrir o dialog de configuração do domínio remetente.
+## Evolução futura (quando tiver domínio)
+
+Trocar `from: "onboarding@resend.dev"` por `from: "noreply@seudominio.com"` — 1 linha, zero mudança no resto.
 
