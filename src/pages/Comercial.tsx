@@ -25,6 +25,7 @@ import DevisKanban from "@/components/devis/DevisKanban";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISuggestionsBlock";
 import UploadAtaDialog, { type ConfirmedAtaResult } from "@/components/devis/UploadAtaDialog";
+import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(n) || 0);
@@ -417,15 +418,20 @@ export default function Comercial() {
                   </div>
                   <div>
                     <Label>Valor total (R$)</Label>
-                    <Input type="number" step="0.01" value={devisForm.total_amount} onChange={(e) => {
-                      const total = e.target.value;
-                      const auto = total === "" ? "" : String((Number(total) * 0.5).toFixed(2));
-                      setDevisForm({ ...devisForm, total_amount: total, down_payment_amount: auto });
-                    }} />
+                    <CurrencyInputBRL
+                      value={devisForm.total_amount}
+                      onChange={(total) => {
+                        const auto = total === "" ? "" : String((Number(total) * 0.5).toFixed(2));
+                        setDevisForm({ ...devisForm, total_amount: total, down_payment_amount: auto });
+                      }}
+                    />
                   </div>
                   <div>
                     <Label>Valor de entrada (50% auto)</Label>
-                    <Input type="number" step="0.01" value={devisForm.down_payment_amount} onChange={(e) => setDevisForm({ ...devisForm, down_payment_amount: e.target.value })} />
+                    <CurrencyInputBRL
+                      value={devisForm.down_payment_amount}
+                      onChange={(v) => setDevisForm({ ...devisForm, down_payment_amount: v })}
+                    />
                   </div>
                   <div>
                     <Label>Título (opcional)</Label>
