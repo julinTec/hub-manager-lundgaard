@@ -581,21 +581,27 @@ export default function Admin() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Prefixo da proposta</Label>
-                    <Input placeholder="DE" />
+                    <Input value={systemSettings.proposalPrefix} onChange={(e) => updateSetting("proposalPrefix", e.target.value)} placeholder="DE" />
                   </div>
                   <div className="space-y-2">
                     <Label>Validade padrão</Label>
-                    <Input type="number" placeholder="7" />
+                    <Input type="number" value={systemSettings.proposalValidityDays} onChange={(e) => updateSetting("proposalValidityDays", e.target.value)} placeholder="7" />
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Entrada padrão (%)</Label>
-                    <Input type="number" placeholder="50" />
+                    <Input type="number" value={systemSettings.proposalDownPaymentPercent} onChange={(e) => updateSetting("proposalDownPaymentPercent", e.target.value)} placeholder="50" />
                   </div>
                   <div className="space-y-2">
+                    <Label>Saldo/finalização (%)</Label>
+                    <Input type="number" value={systemSettings.proposalFinalPaymentPercent} onChange={(e) => updateSetting("proposalFinalPaymentPercent", e.target.value)} placeholder="50" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
                     <Label>Modelo padrão</Label>
-                    <Select defaultValue="completo">
+                    <Select value={systemSettings.proposalTemplate} onValueChange={(value) => updateSetting("proposalTemplate", value)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="completo">Completo</SelectItem>
@@ -603,10 +609,63 @@ export default function Admin() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Responsável/assinatura padrão</Label>
+                    <Input value={systemSettings.proposalSignature} onChange={(e) => updateSetting("proposalSignature", e.target.value)} placeholder="Nome do responsável" />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Observação padrão</Label>
-                  <Textarea placeholder="Texto padrão exibido nas propostas" />
+                  <Label>Condições comerciais padrão</Label>
+                  <Textarea value={systemSettings.proposalTerms} onChange={(e) => updateSetting("proposalTerms", e.target.value)} placeholder="Texto padrão exibido nas propostas" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Prazo de execução padrão</Label>
+                    <Textarea value={systemSettings.proposalExecutionDeadline} onChange={(e) => updateSetting("proposalExecutionDeadline", e.target.value)} placeholder="Ex.: até 10 dias úteis" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Garantia/observações padrão</Label>
+                    <Textarea value={systemSettings.proposalWarranty} onChange={(e) => updateSetting("proposalWarranty", e.target.value)} placeholder="Texto de garantia ou observações" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-muted bg-gradient-to-br from-background to-secondary/50">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Hash className="h-5 w-5 text-primary" />
+                  Numeração e Documentos
+                </CardTitle>
+                <CardDescription>Formatos e prefixos usados em propostas, lançamentos e serviços.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Sequencial atual da proposta</Label>
+                    <Input type="number" value={systemSettings.proposalSequence} onChange={(e) => updateSetting("proposalSequence", e.target.value)} placeholder="1" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Formato do número</Label>
+                    <Select value={systemSettings.proposalNumberFormat} onValueChange={(value) => updateSetting("proposalNumberFormat", value)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="prefixo-ano-mes-sequencial">DE + Ano + Mês + Sequencial</SelectItem>
+                        <SelectItem value="prefixo-ano-sequencial">DE + Ano + Sequencial</SelectItem>
+                        <SelectItem value="sequencial-simples">Sequencial simples</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Prefixo financeiro</Label>
+                    <Input value={systemSettings.financialEntryPrefix} onChange={(e) => updateSetting("financialEntryPrefix", e.target.value)} placeholder="FIN" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Prefixo de serviço</Label>
+                    <Input value={systemSettings.servicePrefix} onChange={(e) => updateSetting("servicePrefix", e.target.value)} placeholder="SRV" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
