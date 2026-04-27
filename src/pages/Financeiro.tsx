@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react";
+import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, ArrowLeft } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -92,6 +92,9 @@ export default function Financeiro() {
           <p className="text-muted-foreground mt-1">Lançamentos financeiros do grupo</p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+          </Button>
           <Card
             role="button"
             tabIndex={0}
