@@ -190,6 +190,8 @@ export default function Admin() {
     },
   });
 
+  const usersLoading = isLoading || isLoadingRoles;
+
   const { data: logs = [] } = useQuery({
     queryKey: ["admin-logs"],
     queryFn: async () => {
@@ -405,7 +407,7 @@ export default function Admin() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {usersLoading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : profiles.length === 0 ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nenhum usuário</TableCell></TableRow>
