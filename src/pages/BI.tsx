@@ -7,16 +7,19 @@ const dashboards = [
     id: "comercial",
     title: "Dashboard Comercial",
     icon: ShoppingCart,
+    gradient: "from-purple-500 to-purple-700",
   },
   {
     id: "financeiro",
     title: "Dashboard Financeiro",
     icon: DollarSign,
+    gradient: "from-blue-500 to-blue-700",
   },
   {
     id: "operacao",
     title: "Dashboard Operação",
     icon: BriefcaseBusiness,
+    gradient: "from-emerald-600 to-emerald-800",
   },
 ] as const;
 
@@ -50,15 +53,13 @@ export default function BI() {
                   setSelectedDashboard(dashboard.id);
                 }
               }}
-              className={`cursor-pointer border transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md ${
-                isActive ? "border-primary bg-primary/5 shadow-sm" : "border-dashed"
+              className={`group min-h-[150px] cursor-pointer border-0 bg-gradient-to-br ${dashboard.gradient} p-6 text-primary-foreground shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl ${
+                isActive ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
               }`}
             >
-              <CardHeader className="space-y-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-lg">{dashboard.title}</CardTitle>
+              <CardHeader className="flex h-full justify-between space-y-0 p-0">
+                <Icon className="h-11 w-11 text-primary-foreground/95" strokeWidth={1.75} />
+                <CardTitle className="text-xl leading-tight text-primary-foreground">{dashboard.title}</CardTitle>
               </CardHeader>
             </Card>
           );
