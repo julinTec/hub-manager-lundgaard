@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import {
   DollarSign,
-  ArrowLeftRight,
   FileText,
   Briefcase,
   LayoutDashboard,
@@ -23,25 +22,18 @@ type ModuleItem = {
 
 const modules: ModuleItem[] = [
   {
-    title: "Financeiro",
-    description: "Movimentação e fluxo de caixa",
-    route: "/financeiro",
-    icon: DollarSign,
-    gradient: "from-blue-500 to-blue-700",
-  },
-  {
-    title: "Conciliação",
-    description: "Conciliação bancária",
-    route: "/conciliacao",
-    icon: ArrowLeftRight,
-    gradient: "from-teal-500 to-teal-700",
-  },
-  {
     title: "Comercial",
     description: "Clientes e propostas (Devis)",
     route: "/comercial",
     icon: FileText,
     gradient: "from-purple-500 to-purple-700",
+  },
+  {
+    title: "Financeiro",
+    description: "Movimentação e fluxo de caixa",
+    route: "/financeiro",
+    icon: DollarSign,
+    gradient: "from-blue-500 to-blue-700",
   },
   {
     title: "Operação",
@@ -65,7 +57,7 @@ const modules: ModuleItem[] = [
     gradient: "from-pink-500 to-pink-700",
   },
   {
-    title: "Administração",
+    title: "Opções / Usuários",
     description: "Usuários e permissões",
     route: "/admin",
     icon: Shield,

@@ -2,7 +2,6 @@ import {
   Home,
   ShoppingCart,
   DollarSign,
-  ArrowLeftRight,
   Settings2,
   Building2,
   BarChart3,
@@ -30,14 +29,13 @@ const mainItems = [
   { title: "Início", url: "/hub", icon: Home },
   { title: "Comercial", url: "/comercial", icon: ShoppingCart },
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
-  { title: "Conciliação", url: "/conciliacao", icon: ArrowLeftRight },
   { title: "Operação", url: "/operacao", icon: Settings2 },
 ];
 
 const managementItems = [
   { title: "Gestão", url: "/gestao", icon: Building2 },
   { title: "Consolidação / BI", url: "/bi", icon: BarChart3 },
-  { title: "Administração", url: "/admin", icon: Shield, adminOnly: true },
+  { title: "Opções / Usuários", url: "/admin", icon: Shield, adminOnly: true },
 ];
 
 export function AppSidebar() {
