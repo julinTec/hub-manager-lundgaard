@@ -1,24 +1,28 @@
-Plano para corrigir a tela de Opções / Usuários:
+Plano ajustado para a tela de BI:
 
-1. Corrigir leitura dos perfis na tela
-- Ajustar a forma como a página Admin carrega usuários e perfis para que o papel atualizado seja exibido imediatamente após salvar.
-- Garantir que erros de carregamento de `profiles` e `user_roles` apareçam como mensagem clara, em vez de a tela mostrar `—` silenciosamente.
+1. Renomear somente o título da página
+- Trocar “Consolidação / BI” por “Dashboards Gerenciais”.
+- Manter exatamente o subtítulo atual: “Indicadores consolidados e integração com ferramentas de BI”.
 
-2. Corrigir permissões de visualização dos papéis
-- Adicionar novamente uma regra segura para que administradores possam visualizar todos os registros de `user_roles`.
-- Manter usuários comuns limitados a visualizar apenas o próprio perfil/papel.
-- Evitar expor a função interna de validação de admin diretamente ao app.
+2. Substituir os cards atuais por 3 cards clicáveis
+- Remover os cards atuais de “Receita x Despesa”, “Fluxo de Caixa”, “Indicadores Gerenciais” e “API para BI Externo”.
+- Criar três cards principais:
+  - Dashboard Comercial
+  - Dashboard Financeiro
+  - Dashboard Operação
+- Aplicar estilo de card clicável com hover, destaque visual e indicação de seleção.
 
-3. Melhorar atualização após salvar
-- Após alterar o perfil, invalidar e recarregar as consultas de usuários e papéis.
-- Atualizar a tabela com os dados retornados, para que o novo perfil apareça sem precisar sair/entrar ou recarregar a página.
+3. Abrir o BI dentro da própria tela
+- Ao clicar em um card, mostrar uma área logo abaixo dos cards.
+- Essa área exibirá o dashboard selecionado dentro do sistema.
+- Como os links/embeds reais dos BIs ainda não foram fornecidos, deixarei um painel preparado com estado vazio/placeholder para cada dashboard, pronto para receber futuramente o iframe, link ou componente do BI correspondente.
 
-4. Validar fluxo completo
-- Testar a função `manage-users` para confirmar que o admin consegue alterar perfil sem 403.
-- Confirmar que o banco contém o novo papel salvo.
-- Rodar verificação de TypeScript para garantir que o app continua compilando.
+4. Manter funcionamento simples e responsivo
+- A tela continuará em `/bi`.
+- Não haverá mudança de rota nem abertura em nova aba.
+- Em desktop os cards ficarão lado a lado; em telas menores, empilhados.
 
 Detalhes técnicos:
-- A função de backend já salva a alteração corretamente.
-- O problema atual está na sincronização da tela com a tabela `user_roles` e na ausência da política “admin pode ver todos os papéis”.
-- A correção será feita sem mexer nos arquivos auto-gerados da integração de backend.
+- A alteração será feita em `src/pages/BI.tsx`.
+- Usarei estado local do React para controlar qual dashboard está selecionado.
+- Não será necessário alterar banco de dados nem backend nesta etapa.
