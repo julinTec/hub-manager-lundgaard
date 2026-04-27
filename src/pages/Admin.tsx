@@ -508,20 +508,63 @@ export default function Admin() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Nome da empresa</Label>
-                    <Input placeholder="Lundgaard" />
+                    <Input value={systemSettings.companyName} onChange={(e) => updateSetting("companyName", e.target.value)} placeholder="Lundgaard" />
                   </div>
                   <div className="space-y-2">
                     <Label>CNPJ</Label>
-                    <Input placeholder="00.000.000/0000-00" />
+                    <Input value={systemSettings.companyDocument} onChange={(e) => updateSetting("companyDocument", e.target.value)} placeholder="00.000.000/0000-00" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>E-mail institucional</Label>
+                    <Input type="email" value={systemSettings.companyEmail} onChange={(e) => updateSetting("companyEmail", e.target.value)} placeholder="contato@empresa.com" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Telefone</Label>
+                    <Input value={systemSettings.companyPhone} onChange={(e) => updateSetting("companyPhone", e.target.value)} placeholder="(00) 00000-0000" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>E-mail institucional</Label>
-                  <Input type="email" placeholder="contato@empresa.com" />
+                  <Label>Endereço</Label>
+                  <Textarea value={systemSettings.companyAddress} onChange={(e) => updateSetting("companyAddress", e.target.value)} placeholder="Endereço completo da empresa" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-secondary/40 to-primary/10">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Palette className="h-5 w-5 text-primary" />
+                  Identidade Visual
+                </CardTitle>
+                <CardDescription>Nome, aparência e contatos exibidos no sistema.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Nome exibido no sistema</Label>
+                    <Input value={systemSettings.systemDisplayName} onChange={(e) => updateSetting("systemDisplayName", e.target.value)} placeholder="Hub Manager" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Cor principal</Label>
+                    <Select value={systemSettings.primaryColor} onValueChange={(value) => updateSetting("primaryColor", value)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primary">Padrão</SelectItem>
+                        <SelectItem value="accent">Destaque</SelectItem>
+                        <SelectItem value="secondary">Neutra</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Endereço</Label>
-                  <Textarea placeholder="Endereço completo da empresa" />
+                  <Label>E-mail de suporte</Label>
+                  <Input type="email" value={systemSettings.supportEmail} onChange={(e) => updateSetting("supportEmail", e.target.value)} placeholder="suporte@empresa.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Texto de rodapé</Label>
+                  <Textarea value={systemSettings.footerText} onChange={(e) => updateSetting("footerText", e.target.value)} placeholder="Texto para PDFs, propostas e relatórios" />
                 </div>
               </CardContent>
             </Card>
