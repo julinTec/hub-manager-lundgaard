@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { toast } from "sonner";
-import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2, Upload, ArrowLeft } from "lucide-react";
+import { Plus, Users, FileText, Eye, Pencil, CalendarIcon, Filter, LayoutGrid, List, Sparkles, Loader2, Upload, ArrowLeft, Send, Clock, CheckCircle2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -175,6 +175,20 @@ export default function Comercial() {
   const clientsById = useMemo(() => Object.fromEntries(clients.map((c: any) => [c.id, c])), [clients]);
   const profilesById = useMemo(() => Object.fromEntries(profiles.map((p: any) => [p.user_id, p])), [profiles]);
 
+  const devisIndicators = useMemo(() => {
+    const sent = devisList.filter((d: any) => d.status === "enviada_ao_cliente").length;
+    const waiting = devisList.filter((d: any) => d.status === "aguardando_aceite").length;
+    const acceptedList = devisList.filter((d: any) => d.status === "aceita");
+    const acceptedTotal = acceptedList.reduce((sum: number, d: any) => sum + (Number(d.total_amount) || 0), 0);
+
+    return {
+      sent,
+      waiting,
+      accepted: acceptedList.length,
+      acceptedTotal,
+    };
+  }, [devisList]);
+
   const filteredDevis = useMemo(() => {
     return devisList.filter((d: any) => {
       if (view === "list" && filterStatus !== "all" && d.status !== filterStatus) return false;
@@ -330,6 +344,47 @@ export default function Comercial() {
 
         {/* DEVIS TAB */}
         <TabsContent value="devis" className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Card className="overflow-hidden border-0 bg-gradient-to-br from-primary to-primary/80 p-4 text-primary-foreground shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-primary-foreground/85">Devis Enviados</p>
+                  <p className="mt-2 text-3xl font-bold font-display leading-none">{devisIndicators.sent}</p>
+                </div>
+                <div className="rounded-full bg-primary-foreground/15 p-2">
+                  <Send className="h-5 w-5" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="overflow-hidden border-0 bg-gradient-to-br from-warning to-warning/80 p-4 text-warning-foreground shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-warning-foreground/85">Devis Aguardando</p>
+                  <p className="mt-2 text-3xl font-bold font-display leading-none">{devisIndicators.waiting}</p>
+                </div>
+                <div className="rounded-full bg-warning-foreground/15 p-2">
+                  <Clock className="h-5 w-5" />
+                </div>
+              </div>
+            </Card>
+
+            <Card className="overflow-hidden border-0 bg-gradient-to-br from-success to-success/80 p-4 text-success-foreground shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-success-foreground/85">Devis Aceitos</p>
+                  <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+                    <p className="text-3xl font-bold font-display leading-none">{devisIndicators.accepted}</p>
+                    <p className="text-sm font-semibold text-success-foreground/90">{fmtBRL(devisIndicators.acceptedTotal)}</p>
+                  </div>
+                </div>
+                <div className="rounded-full bg-success-foreground/15 p-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+              </div>
+            </Card>
+          </div>
+
           <Card className="p-4">
             <div className="flex items-center gap-2 mb-3 text-sm font-medium text-muted-foreground">
               <Filter className="h-4 w-4" /> Filtros

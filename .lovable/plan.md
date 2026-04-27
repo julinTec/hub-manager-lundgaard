@@ -1,24 +1,17 @@
-Plano ajustado:
+Plano para incluir os pequenos cards de indicadores na página Comercial:
 
-1. Adicionar um botão **Voltar** no topo à direita das páginas/áreas principais:
-   - Comercial
-   - Financeiro
-   - Operação
-   - Conciliação
+1. Adicionar uma faixa de indicadores no topo da aba Devis, antes dos filtros.
+   - Devis Enviados: quantidade com status `enviada_ao_cliente`.
+   - Devis Aguardando: quantidade com status `aguardando_aceite`.
+   - Devis Aceitos: quantidade com status `aceita` e o valor total somado dos Devis aceitos.
 
-2. O botão ficará no cabeçalho de cada tela, alinhado à direita, junto aos botões de ação que já existem quando houver.
+2. Usar o visual de cards coloridos/gradiente, seguindo o estilo já usado na tela Início.
+   - Cards menores, responsivos, com ícone, título e número destacado.
+   - Cores alinhadas ao funil: azul/ciano para enviados, amarelo/âmbar para aguardando, verde/emerald para aceitos.
 
-3. Comportamento do botão:
-   - Ao clicar em **Voltar**, o sistema retorna para a tela anterior usando a navegação do navegador.
-   - Como essas áreas normalmente são acessadas a partir do Início/Hub, isso levará o usuário de volta para a tela anterior de onde ele veio.
+3. Implementar os cálculos diretamente a partir da lista de Devis já carregada na página.
+   - Sem alterar banco de dados.
+   - Sem criar novas consultas; os dados já vêm de `devisList`.
+   - O valor total dos aceitos será a soma de `total_amount` onde `status === "aceita"`.
 
-4. Visual:
-   - Usar o componente padrão `Button` com estilo `outline`.
-   - Incluir ícone de seta para a esquerda antes do texto **Voltar**.
-   - Manter os demais botões e layout atuais sem alterar funcionalidades.
-
-Detalhes técnicos:
-- Em `Comercial.tsx`, já existe `useNavigate`; será usado `navigate(-1)`.
-- Em `Financeiro.tsx`, já existe `useNavigate`; será usado `navigate(-1)`.
-- Em `Operacao.tsx` e `Conciliacao.tsx`, será importado `useNavigate` de `react-router-dom`.
-- Importar/adicionar o ícone `ArrowLeft` de `lucide-react` onde necessário.
+4. Validar com checagem TypeScript após a alteração.
