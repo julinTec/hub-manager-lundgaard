@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,145 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Users, ScrollText, Plus, Pencil, Trash2, Settings, Building2, BriefcaseBusiness, WalletCards, ShieldCheck, Save, Bell } from "lucide-react";
+import { Users, ScrollText, Plus, Pencil, Trash2, Settings, Building2, BriefcaseBusiness, WalletCards, ShieldCheck, Save, Bell, Palette, Hash, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+
+type SystemSettings = {
+  companyName: string;
+  companyDocument: string;
+  companyEmail: string;
+  companyPhone: string;
+  companyAddress: string;
+  systemDisplayName: string;
+  primaryColor: string;
+  footerText: string;
+  supportEmail: string;
+  proposalPrefix: string;
+  proposalValidityDays: string;
+  proposalDownPaymentPercent: string;
+  proposalFinalPaymentPercent: string;
+  proposalTemplate: string;
+  proposalTerms: string;
+  proposalExecutionDeadline: string;
+  proposalWarranty: string;
+  proposalSignature: string;
+  proposalSequence: string;
+  proposalNumberFormat: string;
+  financialEntryPrefix: string;
+  servicePrefix: string;
+  defaultCurrency: string;
+  defaultBankAccount: string;
+  defaultCostCenter: string;
+  defaultIncomeCategory: string;
+  defaultExpenseCategory: string;
+  defaultDueDay: string;
+  requireBusinessUnit: boolean;
+  requireCostCenter: boolean;
+  requireEntryDescription: boolean;
+  allowRetroactiveEntries: boolean;
+  conciliationDayTolerance: string;
+  conciliationValueTolerance: string;
+  conciliationAutoSuggest: boolean;
+  conciliationAutoApproveExact: boolean;
+  conciliationBlockDivergent: boolean;
+  conciliationWeightValue: string;
+  conciliationWeightDate: string;
+  conciliationWeightDescription: string;
+  conciliationWeightDocument: string;
+  defaultHomePage: string;
+  auditSensitiveChanges: boolean;
+  administrativeNotifications: boolean;
+  notifyProposalSent: boolean;
+  notifyProposalAccepted: boolean;
+  notifyProposalRejected: boolean;
+  notifyPendingCharge: boolean;
+  notifyDelayedService: boolean;
+  notifyConciliationDivergence: boolean;
+  notificationEmail: string;
+  defaultLanguage: string;
+  timezone: string;
+  dateFormat: string;
+  recordsPerPage: string;
+  compactMode: boolean;
+  confirmBeforeDelete: boolean;
+  blockDeleteConciliatedEntries: boolean;
+  logRetentionDays: string;
+  allowLogExport: boolean;
+  transactionalEmailEnabled: boolean;
+  whatsappEnabled: boolean;
+  bankImportEnabled: boolean;
+  webhooksEnabled: boolean;
+  externalBiEnabled: boolean;
+};
+
+const defaultSystemSettings: SystemSettings = {
+  companyName: "",
+  companyDocument: "",
+  companyEmail: "",
+  companyPhone: "",
+  companyAddress: "",
+  systemDisplayName: "",
+  primaryColor: "primary",
+  footerText: "",
+  supportEmail: "",
+  proposalPrefix: "DE",
+  proposalValidityDays: "7",
+  proposalDownPaymentPercent: "50",
+  proposalFinalPaymentPercent: "50",
+  proposalTemplate: "completo",
+  proposalTerms: "",
+  proposalExecutionDeadline: "",
+  proposalWarranty: "",
+  proposalSignature: "",
+  proposalSequence: "1",
+  proposalNumberFormat: "prefixo-ano-mes-sequencial",
+  financialEntryPrefix: "FIN",
+  servicePrefix: "SRV",
+  defaultCurrency: "brl",
+  defaultBankAccount: "",
+  defaultCostCenter: "",
+  defaultIncomeCategory: "",
+  defaultExpenseCategory: "",
+  defaultDueDay: "10",
+  requireBusinessUnit: true,
+  requireCostCenter: false,
+  requireEntryDescription: true,
+  allowRetroactiveEntries: true,
+  conciliationDayTolerance: "3",
+  conciliationValueTolerance: "1.00",
+  conciliationAutoSuggest: true,
+  conciliationAutoApproveExact: false,
+  conciliationBlockDivergent: true,
+  conciliationWeightValue: "40",
+  conciliationWeightDate: "25",
+  conciliationWeightDescription: "20",
+  conciliationWeightDocument: "15",
+  defaultHomePage: "hub",
+  auditSensitiveChanges: true,
+  administrativeNotifications: false,
+  notifyProposalSent: false,
+  notifyProposalAccepted: true,
+  notifyProposalRejected: true,
+  notifyPendingCharge: true,
+  notifyDelayedService: true,
+  notifyConciliationDivergence: true,
+  notificationEmail: "",
+  defaultLanguage: "pt-BR",
+  timezone: "America/Sao_Paulo",
+  dateFormat: "dd/MM/yyyy",
+  recordsPerPage: "25",
+  compactMode: false,
+  confirmBeforeDelete: true,
+  blockDeleteConciliatedEntries: true,
+  logRetentionDays: "365",
+  allowLogExport: true,
+  transactionalEmailEnabled: false,
+  whatsappEnabled: false,
+  bankImportEnabled: false,
+  webhooksEnabled: false,
+  externalBiEnabled: false,
+};
 
 export default function Admin() {
   const queryClient = useQueryClient();
