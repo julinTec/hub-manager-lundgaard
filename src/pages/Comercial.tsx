@@ -180,9 +180,7 @@ export default function Comercial() {
     const sent = devisList.filter((d: any) =>
       !!d.sent_at || d.status === "enviada_ao_cliente" || d.status === "aguardando_aceite" || d.status === "aceita" || !!d.accepted_at,
     ).length;
-    const waiting = devisList.filter((d: any) =>
-      d.status === "aguardando_aceite" || d.status === "aceita" || !!d.accepted_at,
-    ).length;
+    const waiting = devisList.filter((d: any) => d.status === "aguardando_aceite").length;
     const acceptedTotal = acceptedList.reduce((sum: number, d: any) => sum + (Number(d.total_amount) || 0), 0);
 
     return {
