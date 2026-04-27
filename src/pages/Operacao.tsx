@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Settings2 } from "lucide-react";
+import { ArrowLeft, Plus, Settings2 } from "lucide-react";
 
 const serviceStatusColors: Record<string, string> = {
   a_iniciar: "bg-accent/30 text-accent-foreground border-accent/40",
@@ -30,6 +31,7 @@ const statusLabels: Record<string, string> = {
 
 export default function Operacao() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", business_unit: "", start_date: "", expected_end_date: "" });
@@ -70,7 +72,11 @@ export default function Operacao() {
           <h1 className="text-3xl font-bold font-display">Operação</h1>
           <p className="text-muted-foreground mt-1">Serviços e processos operacionais</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-2" /> Novo Serviço</Button></DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Novo Serviço</DialogTitle></DialogHeader>
@@ -85,7 +91,8 @@ export default function Operacao() {
               <Button className="w-full" onClick={() => createService.mutate()} disabled={!form.title}>Salvar</Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
