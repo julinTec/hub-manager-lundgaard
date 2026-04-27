@@ -1,74 +1,30 @@
-# Ajuste de organização do Hub e menu lateral
+Vou ajustar o acesso ao menu **Opções / Usuários** para voltar a abrir corretamente.
 
-## O que será alterado
+Plano de correção:
 
-1. **Reordenar os cards do Hub** na sequência solicitada:
-   - Comercial
-   - Financeiro
-   - Operação
-   - Gestão
-   - BI
-   - Opções / Usuários
+1. Corrigir o controle de autenticação
+   - Hoje a página `/admin` depende de `userRole === "admin"`, mas o carregamento do perfil pode terminar antes da função de usuário ser carregada.
+   - Vou separar o estado de carregamento da sessão e o estado de carregamento da função/perfil do usuário, evitando que o sistema redirecione antes de saber que o usuário é admin.
 
-2. **Remover o card Conciliação da tela principal do Hub**
-   - Ele não aparecerá mais como card separado.
-   - A Conciliação passará a ficar acessível dentro da área Financeiro.
+2. Ajustar a rota protegida de administrador
+   - A rota `/admin` só será bloqueada depois que a verificação de permissões terminar.
+   - Enquanto isso, aparecerá a tela de carregamento “Verificando permissões...”.
+   - Isso evita o clique aparentemente “não fazer nada” ou voltar silenciosamente para `/hub`.
 
-3. **Remover Conciliação da lateral esquerda**
-   - O menu lateral não terá mais um item separado chamado “Conciliação”.
-   - A navegação principal ficará mais enxuta.
+3. Ajustar o item do menu lateral
+   - O botão **Opções / Usuários** continuará visível para usuários logados.
+   - O clique navegará para `/admin` normalmente.
+   - A proteção real continuará na rota, com base na função admin do usuário.
 
-4. **Manter Conciliação dentro do Financeiro**
-   - Na página Financeiro, será adicionado um acesso claro para Conciliação, por exemplo um botão/atalho “Conciliação” no topo da tela.
-   - A rota técnica `/conciliacao` continuará existindo para não quebrar a tela atual, mas o usuário chegará nela pelo Financeiro.
+4. Melhorar tratamento de falhas
+   - Caso a consulta da função falhe temporariamente, o app não ficará preso em um estado inconsistente.
+   - O logout também limpará sessão, usuário e função localmente para evitar sessão antiga quebrada.
 
-5. **Renomear Administração**
-   - Onde hoje aparece “Administração”, passará a aparecer:
-     - **Opções / Usuários**
-   - Isso será aplicado no card do Hub e no menu lateral.
-   - A regra de visibilidade continua igual: só aparece para usuário admin.
+5. Validar
+   - Rodar verificação TypeScript.
+   - Confirmar que o usuário atual tem função `admin` no backend e que `/admin` deve abrir para ele.
 
-6. **Retirar os demais cards/itens não solicitados**
-   - O Hub deixará visíveis apenas os módulos listados acima.
-   - Não haverá card separado para Início nem Conciliação.
-
-## Resultado visual esperado
-
-```text
-Hub
-
-[ Comercial ] [ Financeiro ] [ Operação ]
-[ Gestão    ] [ BI         ] [ Opções / Usuários ]
-```
-
-Menu lateral:
-
-```text
-Principal
-- Início
-- Comercial
-- Financeiro
-- Operação
-
-Gestão
-- Gestão
-- Consolidação / BI
-- Opções / Usuários
-```
-
-## Arquivos que serão ajustados
-
-- `src/pages/Hub.tsx`
-  - Reordenar/remover cards.
-  - Renomear Administração para Opções / Usuários.
-
-- `src/components/AppSidebar.tsx`
-  - Remover Conciliação do menu lateral.
-  - Renomear Administração para Opções / Usuários.
-
-- `src/pages/Financeiro.tsx`
-  - Adicionar acesso para a tela de Conciliação dentro da área Financeiro.
-
-## Observação
-
-Não será feita alteração no banco de dados. É apenas reorganização de navegação e nomenclatura na interface.
+Resultado esperado:
+- Ao clicar em **Opções / Usuários**, a tela de administração abrirá novamente.
+- Se a permissão ainda estiver carregando, o usuário verá um carregamento em vez de ser jogado de volta ao Hub.
+- Usuários sem admin continuarão sem acesso à tela administrativa.
