@@ -166,6 +166,11 @@ export default function Admin() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formRole, setFormRole] = useState("gerencial");
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(defaultSystemSettings);
+
+  const updateSetting = <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => {
+    setSystemSettings((current) => ({ ...current, [key]: value }));
+  };
 
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["admin-profiles"],
@@ -190,6 +195,25 @@ export default function Admin() {
       return data ?? [];
     },
   });
+
+  const { data: savedSettings, isLoading: isLoadingSettings } = useQuery({
+    queryKey: ["system-settings", "general"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("settings")
+        .eq("category", "general")
+        .maybeSingle();
+      if (error) throw error;
+      return data?.settings as Partial<SystemSettings> | undefined;
+    },
+  });
+
+  useEffect(() => {
+    if (savedSettings) {
+      setSystemSettings({ ...defaultSystemSettings, ...savedSettings });
+    }
+  }, [savedSettings]);
 
   const getUserRole = (userId: string): string => {
     const r = roles.find((r) => r.user_id === userId);
@@ -243,6 +267,22 @@ export default function Admin() {
       toast.success("Usuário removido!");
       queryClient.invalidateQueries({ queryKey: ["admin-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["admin-roles"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const saveSettings = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("system_settings").upsert({
+        category: "general",
+        settings: systemSettings,
+        updated_by: user?.id,
+      }, { onConflict: "category" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Opções do sistema salvas!");
+      queryClient.invalidateQueries({ queryKey: ["system-settings", "general"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
