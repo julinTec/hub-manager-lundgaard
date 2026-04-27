@@ -39,13 +39,21 @@ Deno.serve(async (req) => {
 
     const callerId = claimsData.claims.sub;
 
-    // Check admin role
-    const { data: isAdmin } = await anonClient.rpc("has_role", {
-      _user_id: callerId,
-      _role: "admin",
-    });
+    // Service role client for admin operations and server-side role validation
+    const adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
-    if (!isAdmin) {
+    // Check admin role server-side without relying on a public RPC permission
+    const { data: adminRole, error: roleError } = await adminClient
+      .from("user_roles")
+      .select("id")
+      .eq("user_id", callerId)
+      .eq("role", "admin")
+      .maybeSingle();
+
+    if (roleError || !adminRole) {
       return new Response(
         JSON.stringify({ error: "Acesso restrito a administradores" }),
         {
@@ -54,12 +62,6 @@ Deno.serve(async (req) => {
         }
       );
     }
-
-    // Service role client for admin operations
-    const adminClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
 
     const body = await req.json();
     const { action } = body;
