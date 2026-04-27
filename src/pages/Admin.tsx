@@ -682,7 +682,7 @@ export default function Admin() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Moeda padrão</Label>
-                    <Select defaultValue="brl">
+                    <Select value={systemSettings.defaultCurrency} onValueChange={(value) => updateSetting("defaultCurrency", value)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="brl">BRL</SelectItem>
@@ -692,19 +692,81 @@ export default function Admin() {
                   </div>
                   <div className="space-y-2">
                     <Label>Tolerância de dias</Label>
-                    <Input type="number" placeholder="3" />
+                    <Input type="number" value={systemSettings.conciliationDayTolerance} onChange={(e) => updateSetting("conciliationDayTolerance", e.target.value)} placeholder="3" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Conta bancária padrão</Label>
-                  <Input placeholder="Selecione ou informe a conta padrão" />
+                  <Input value={systemSettings.defaultBankAccount} onChange={(e) => updateSetting("defaultBankAccount", e.target.value)} placeholder="Selecione ou informe a conta padrão" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Centro de custo padrão</Label>
+                    <Input value={systemSettings.defaultCostCenter} onChange={(e) => updateSetting("defaultCostCenter", e.target.value)} placeholder="Centro de custo" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Dia padrão de vencimento</Label>
+                    <Input type="number" value={systemSettings.defaultDueDay} onChange={(e) => updateSetting("defaultDueDay", e.target.value)} placeholder="10" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Categoria padrão de entrada</Label>
+                    <Input value={systemSettings.defaultIncomeCategory} onChange={(e) => updateSetting("defaultIncomeCategory", e.target.value)} placeholder="Receita operacional" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Categoria padrão de saída</Label>
+                    <Input value={systemSettings.defaultExpenseCategory} onChange={(e) => updateSetting("defaultExpenseCategory", e.target.value)} placeholder="Despesa operacional" />
+                  </div>
                 </div>
                 <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
                   <div>
                     <Label>Sugestões automáticas de conciliação</Label>
                     <p className="text-sm text-muted-foreground">Usar valor, data e descrição para sugerir vínculos.</p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch checked={systemSettings.conciliationAutoSuggest} onCheckedChange={(checked) => updateSetting("conciliationAutoSuggest", checked)} />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
+                    <Label>Exigir unidade de negócio</Label>
+                    <Switch checked={systemSettings.requireBusinessUnit} onCheckedChange={(checked) => updateSetting("requireBusinessUnit", checked)} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
+                    <Label>Permitir retroativos</Label>
+                    <Switch checked={systemSettings.allowRetroactiveEntries} onCheckedChange={(checked) => updateSetting("allowRetroactiveEntries", checked)} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 to-background">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <SlidersHorizontal className="h-5 w-5 text-primary" />
+                  Regras de Conciliação
+                </CardTitle>
+                <CardDescription>Critérios de compatibilidade entre extrato e lançamentos.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Tolerância de valor</Label>
+                    <Input type="number" value={systemSettings.conciliationValueTolerance} onChange={(e) => updateSetting("conciliationValueTolerance", e.target.value)} placeholder="1.00" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tolerância de dias</Label>
+                    <Input type="number" value={systemSettings.conciliationDayTolerance} onChange={(e) => updateSetting("conciliationDayTolerance", e.target.value)} placeholder="3" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <div className="space-y-2"><Label>Peso valor</Label><Input type="number" value={systemSettings.conciliationWeightValue} onChange={(e) => updateSetting("conciliationWeightValue", e.target.value)} /></div>
+                  <div className="space-y-2"><Label>Peso data</Label><Input type="number" value={systemSettings.conciliationWeightDate} onChange={(e) => updateSetting("conciliationWeightDate", e.target.value)} /></div>
+                  <div className="space-y-2"><Label>Peso descrição</Label><Input type="number" value={systemSettings.conciliationWeightDescription} onChange={(e) => updateSetting("conciliationWeightDescription", e.target.value)} /></div>
+                  <div className="space-y-2"><Label>Peso documento</Label><Input type="number" value={systemSettings.conciliationWeightDocument} onChange={(e) => updateSetting("conciliationWeightDocument", e.target.value)} /></div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Aprovar 100% automático</Label><Switch checked={systemSettings.conciliationAutoApproveExact} onCheckedChange={(checked) => updateSetting("conciliationAutoApproveExact", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Bloquear divergentes</Label><Switch checked={systemSettings.conciliationBlockDivergent} onCheckedChange={(checked) => updateSetting("conciliationBlockDivergent", checked)} /></div>
                 </div>
               </CardContent>
             </Card>
