@@ -175,15 +175,17 @@ export default function Admin() {
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["admin-profiles"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*");
+      const { data, error } = await supabase.from("profiles").select("*");
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  const { data: roles = [] } = useQuery({
+  const { data: roles = [], isLoading: isLoadingRoles } = useQuery({
     queryKey: ["admin-roles"],
     queryFn: async () => {
-      const { data } = await supabase.from("user_roles").select("*");
+      const { data, error } = await supabase.from("user_roles").select("*");
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -252,9 +254,12 @@ export default function Admin() {
   const updateRole = useMutation({
     mutationFn: ({ user_id, role }: { user_id: string; role: string }) =>
       invokeManageUsers({ action: "update-role", user_id, role }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Perfil atualizado!");
-      queryClient.invalidateQueries({ queryKey: ["admin-roles"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-roles"] }),
+      ]);
       setEditOpen(false);
     },
     onError: (err: Error) => toast.error(err.message),
