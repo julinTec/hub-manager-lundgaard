@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -21,6 +22,7 @@ const statusColors: Record<string, string> = {
 
 export default function Financeiro() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [competence, setCompetence] = useState<string>("");
@@ -90,6 +92,9 @@ export default function Financeiro() {
           <p className="text-muted-foreground mt-1">Lançamentos financeiros do grupo</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/conciliacao")}>
+            <ArrowLeftRight className="h-4 w-4 mr-2" /> Conciliação
+          </Button>
           <Button variant="outline" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-2" /> Exportar CSV
           </Button>
