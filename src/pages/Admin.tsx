@@ -113,7 +113,7 @@ export default function Admin() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold font-display">Administração</h1>
+          <h1 className="text-3xl font-bold font-display">Opções / Usuários</h1>
           <p className="text-muted-foreground mt-1">Gerencie usuários e perfis do sistema</p>
         </div>
       </div>
