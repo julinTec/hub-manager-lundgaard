@@ -5,11 +5,9 @@ import {
   Briefcase,
   LayoutDashboard,
   BarChart3,
-  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { useAuth } from "@/contexts/AuthContext";
 
 type ModuleItem = {
   title: string;
@@ -56,14 +54,6 @@ const modules: ModuleItem[] = [
     icon: BarChart3,
     gradient: "from-pink-500 to-pink-700",
   },
-  {
-    title: "Opções / Usuários",
-    description: "Usuários e permissões",
-    route: "/admin",
-    icon: Shield,
-    gradient: "from-slate-600 to-slate-800",
-    adminOnly: true,
-  },
 ];
 
 function ModuleCard({ item }: { item: ModuleItem }) {
@@ -84,9 +74,6 @@ function ModuleCard({ item }: { item: ModuleItem }) {
 }
 
 export default function Hub() {
-  const { userRole } = useAuth();
-  const visible = modules.filter((m) => !m.adminOnly || userRole === "admin");
-
   return (
     <div className="space-y-8">
       <div className="text-center sm:text-left">
@@ -95,7 +82,7 @@ export default function Hub() {
       </div>
 
       <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visible.map((m) => (
+        {modules.map((m) => (
           <ModuleCard key={m.route} item={m} />
         ))}
       </div>
