@@ -34,7 +34,7 @@ const mainItems = [
 
 const managementItems = [
   { title: "Gestão", url: "/gestao", icon: Building2 },
-  { title: "Consolidação / BI", url: "/bi", icon: BarChart3 },
+  { title: "BI / Business Intelligence", url: "/bi", icon: BarChart3 },
   { title: "Opções / Usuários", url: "/admin", icon: Shield, adminOnly: true },
 ];
 
