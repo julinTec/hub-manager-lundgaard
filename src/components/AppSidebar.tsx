@@ -43,7 +43,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, userRole, signOut } = useAuth();
+  const { user, refreshRole, signOut } = useAuth();
 
   const isActive = (path: string) =>
     path === "/hub" ? location.pathname === "/hub" : location.pathname.startsWith(path);
@@ -51,6 +51,11 @@ export function AppSidebar() {
   const filteredManagement = managementItems.filter(
     (item) => !item.adminOnly || Boolean(user)
   );
+
+  const handleNavigate = async (url: string) => {
+    if (url === "/admin") await refreshRole();
+    navigate(url);
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -73,7 +78,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {mainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton isActive={isActive(item.url)} onClick={() => navigate(item.url)}>
+                  <SidebarMenuButton isActive={isActive(item.url)} onClick={() => handleNavigate(item.url)}>
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}
                   </SidebarMenuButton>
@@ -89,7 +94,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {filteredManagement.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton isActive={isActive(item.url)} onClick={() => navigate(item.url)}>
+                  <SidebarMenuButton isActive={isActive(item.url)} onClick={() => handleNavigate(item.url)}>
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}
                   </SidebarMenuButton>

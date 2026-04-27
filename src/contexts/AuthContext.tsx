@@ -8,6 +8,7 @@ type AuthContextType = {
   loading: boolean;
   roleLoading: boolean;
   userRole: string | null;
+  refreshRole: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   roleLoading: true,
   userRole: null,
+  refreshRole: async () => {},
   signOut: async () => {},
 });
 
@@ -32,12 +34,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchRole = async (userId: string) => {
     setRoleLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
         .limit(1)
         .maybeSingle();
+
+      if (error) throw error;
       setUserRole(data?.role ?? null);
     } catch (e) {
       console.error("Failed to fetch user role", e);
@@ -45,6 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setRoleLoading(false);
     }
+  };
+
+  const refreshRole = async () => {
+    if (!user?.id) return;
+    await fetchRole(user.id);
   };
 
   useEffect(() => {
@@ -106,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, roleLoading, userRole, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, roleLoading, userRole, refreshRole, signOut }}>
       {children}
     </AuthContext.Provider>
   );
