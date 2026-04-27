@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search } from "lucide-react";
+import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -21,6 +22,7 @@ const statusColors: Record<string, string> = {
 
 export default function Conciliacao() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
 
@@ -212,7 +214,10 @@ export default function Conciliacao() {
           <h1 className="text-3xl font-bold font-display">Conciliação Bancária</h1>
           <p className="text-muted-foreground mt-1">Compare extratos com lançamentos internos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+          </Button>
           <label className="cursor-pointer">
             <Button variant="outline" asChild>
               <span><Upload className="h-4 w-4 mr-2" /> Upload Extrato</span>
