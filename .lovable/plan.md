@@ -1,28 +1,24 @@
-Plano ajustado para a tela de BI:
+Plano ajustado:
 
-1. Renomear somente o título da página
-- Trocar “Consolidação / BI” por “Dashboards Gerenciais”.
-- Manter exatamente o subtítulo atual: “Indicadores consolidados e integração com ferramentas de BI”.
+1. Adicionar um botão **Voltar** no topo à direita das páginas/áreas principais:
+   - Comercial
+   - Financeiro
+   - Operação
+   - Conciliação
 
-2. Substituir os cards atuais por 3 cards clicáveis
-- Remover os cards atuais de “Receita x Despesa”, “Fluxo de Caixa”, “Indicadores Gerenciais” e “API para BI Externo”.
-- Criar três cards principais:
-  - Dashboard Comercial
-  - Dashboard Financeiro
-  - Dashboard Operação
-- Aplicar estilo de card clicável com hover, destaque visual e indicação de seleção.
+2. O botão ficará no cabeçalho de cada tela, alinhado à direita, junto aos botões de ação que já existem quando houver.
 
-3. Abrir o BI dentro da própria tela
-- Ao clicar em um card, mostrar uma área logo abaixo dos cards.
-- Essa área exibirá o dashboard selecionado dentro do sistema.
-- Como os links/embeds reais dos BIs ainda não foram fornecidos, deixarei um painel preparado com estado vazio/placeholder para cada dashboard, pronto para receber futuramente o iframe, link ou componente do BI correspondente.
+3. Comportamento do botão:
+   - Ao clicar em **Voltar**, o sistema retorna para a tela anterior usando a navegação do navegador.
+   - Como essas áreas normalmente são acessadas a partir do Início/Hub, isso levará o usuário de volta para a tela anterior de onde ele veio.
 
-4. Manter funcionamento simples e responsivo
-- A tela continuará em `/bi`.
-- Não haverá mudança de rota nem abertura em nova aba.
-- Em desktop os cards ficarão lado a lado; em telas menores, empilhados.
+4. Visual:
+   - Usar o componente padrão `Button` com estilo `outline`.
+   - Incluir ícone de seta para a esquerda antes do texto **Voltar**.
+   - Manter os demais botões e layout atuais sem alterar funcionalidades.
 
 Detalhes técnicos:
-- A alteração será feita em `src/pages/BI.tsx`.
-- Usarei estado local do React para controlar qual dashboard está selecionado.
-- Não será necessário alterar banco de dados nem backend nesta etapa.
+- Em `Comercial.tsx`, já existe `useNavigate`; será usado `navigate(-1)`.
+- Em `Financeiro.tsx`, já existe `useNavigate`; será usado `navigate(-1)`.
+- Em `Operacao.tsx` e `Conciliacao.tsx`, será importado `useNavigate` de `react-router-dom`.
+- Importar/adicionar o ícone `ArrowLeft` de `lucide-react` onde necessário.
