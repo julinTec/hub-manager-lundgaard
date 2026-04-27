@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Users, ScrollText, Plus, Pencil, Trash2 } from "lucide-react";
+import { Users, ScrollText, Plus, Pencil, Trash2, Settings, Building2, BriefcaseBusiness, WalletCards, ShieldCheck, Save, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -122,6 +124,7 @@ export default function Admin() {
         <TabsList>
           <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" />Usuários</TabsTrigger>
           <TabsTrigger value="logs"><ScrollText className="h-4 w-4 mr-2" />Logs</TabsTrigger>
+          <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-2" />Opções do Sistema</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -313,6 +316,168 @@ export default function Admin() {
               </TableBody>
             </Table>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 to-accent/10">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  Dados da Empresa
+                </CardTitle>
+                <CardDescription>Informações usadas em propostas, relatórios e documentos.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Nome da empresa</Label>
+                    <Input placeholder="Lundgaard" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CNPJ</Label>
+                    <Input placeholder="00.000.000/0000-00" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>E-mail institucional</Label>
+                  <Input type="email" placeholder="contato@empresa.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Endereço</Label>
+                  <Textarea placeholder="Endereço completo da empresa" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-accent/30 bg-gradient-to-br from-accent/10 to-secondary/40">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <BriefcaseBusiness className="h-5 w-5 text-accent" />
+                  Preferências Comerciais
+                </CardTitle>
+                <CardDescription>Parâmetros padrão para propostas e negociações.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Prefixo da proposta</Label>
+                    <Input placeholder="DE" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Validade padrão</Label>
+                    <Input type="number" placeholder="7" />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Entrada padrão (%)</Label>
+                    <Input type="number" placeholder="50" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Modelo padrão</Label>
+                    <Select defaultValue="completo">
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="completo">Completo</SelectItem>
+                        <SelectItem value="resumido">Resumido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Observação padrão</Label>
+                  <Textarea placeholder="Texto padrão exibido nas propostas" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-muted bg-gradient-to-br from-secondary/50 to-background">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <WalletCards className="h-5 w-5 text-primary" />
+                  Configurações Financeiras
+                </CardTitle>
+                <CardDescription>Preferências para lançamentos e conciliação financeira.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Moeda padrão</Label>
+                    <Select defaultValue="brl">
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="brl">BRL</SelectItem>
+                        <SelectItem value="usd">USD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tolerância de dias</Label>
+                    <Input type="number" placeholder="3" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Conta bancária padrão</Label>
+                  <Input placeholder="Selecione ou informe a conta padrão" />
+                </div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
+                  <div>
+                    <Label>Sugestões automáticas de conciliação</Label>
+                    <p className="text-sm text-muted-foreground">Usar valor, data e descrição para sugerir vínculos.</p>
+                  </div>
+                  <Switch defaultChecked />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-destructive/20 bg-gradient-to-br from-destructive/10 to-background">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ShieldCheck className="h-5 w-5 text-destructive" />
+                  Permissões e Segurança
+                </CardTitle>
+                <CardDescription>Controles administrativos, auditoria e notificações.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Página inicial padrão</Label>
+                  <Select defaultValue="hub">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hub">Hub</SelectItem>
+                      <SelectItem value="bi">BI / Business Intelligence</SelectItem>
+                      <SelectItem value="financeiro">Financeiro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
+                  <div>
+                    <Label>Registrar alterações sensíveis</Label>
+                    <p className="text-sm text-muted-foreground">Auditar exclusões e mudanças de perfil.</p>
+                  </div>
+                  <Switch defaultChecked />
+                </div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
+                  <div className="flex items-start gap-2">
+                    <Bell className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <Label>Notificações administrativas</Label>
+                      <p className="text-sm text-muted-foreground">Avisar sobre propostas aprovadas e conciliações divergentes.</p>
+                    </div>
+                  </div>
+                  <Switch />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={() => toast.success("Opções do sistema salvas!") }>
+              <Save className="h-4 w-4 mr-2" />
+              Salvar Opções
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
