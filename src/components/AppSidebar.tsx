@@ -49,7 +49,7 @@ export function AppSidebar() {
     path === "/hub" ? location.pathname === "/hub" : location.pathname.startsWith(path);
 
   const filteredManagement = managementItems.filter(
-    (item) => !item.adminOnly || userRole === "admin"
+    (item) => !item.adminOnly || Boolean(user)
   );
 
   return (
