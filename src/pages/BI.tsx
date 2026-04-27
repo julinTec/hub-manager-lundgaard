@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, BriefcaseBusiness, DollarSign, ShoppingCart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, BarChart3, BriefcaseBusiness, DollarSign, ShoppingCart } from "lucide-react";
 
 const dashboards = [
   {
@@ -26,14 +28,20 @@ const dashboards = [
 type DashboardId = (typeof dashboards)[number]["id"];
 
 export default function BI() {
+  const navigate = useNavigate();
   const [selectedDashboard, setSelectedDashboard] = useState<DashboardId | null>(null);
   const activeDashboard = dashboards.find((dashboard) => dashboard.id === selectedDashboard);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold font-display">Dashboards Gerenciais</h1>
-        <p className="text-muted-foreground mt-1">Indicadores consolidados e integração com ferramentas de BI</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold font-display">Dashboards Gerenciais</h1>
+          <p className="text-muted-foreground mt-1">Indicadores consolidados e integração com ferramentas de BI</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate(-1)} className="sm:self-start">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

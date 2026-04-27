@@ -1,12 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, FileText, DollarSign } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Building2, FileText, DollarSign } from "lucide-react";
 
 export default function Gestao() {
+  const navigate = useNavigate();
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold font-display">Gestão / Administrativo</h1>
-        <p className="text-muted-foreground mt-1">Visão transversal do grupo empresarial</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold font-display">Gestão / Administrativo</h1>
+          <p className="text-muted-foreground mt-1">Visão transversal do grupo empresarial</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate(-1)} className="sm:self-start">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
