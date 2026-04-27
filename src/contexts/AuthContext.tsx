@@ -6,6 +6,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  roleLoading: boolean;
   userRole: string | null;
   signOut: () => Promise<void>;
 };
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  roleLoading: true,
   userRole: null,
   signOut: async () => {},
 });
@@ -24,9 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [roleLoading, setRoleLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
   const fetchRole = async (userId: string) => {
+    setRoleLoading(true);
     try {
       const { data } = await supabase
         .from("user_roles")
@@ -38,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Failed to fetch user role", e);
       setUserRole(null);
+    } finally {
+      setRoleLoading(false);
     }
   };
 
@@ -49,11 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        setRoleLoading(true);
         setTimeout(() => {
           if (mounted) fetchRole(session.user.id);
         }, 0);
       } else {
         setUserRole(null);
+        setRoleLoading(false);
       }
       setLoading(false);
     });
@@ -65,9 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          fetchRole(session.user.id);
+          await fetchRole(session.user.id);
         } else {
           setUserRole(null);
+          setRoleLoading(false);
         }
       } catch (e) {
         console.error("Auth init error", e);
@@ -75,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(null);
           setUser(null);
           setUserRole(null);
+          setRoleLoading(false);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -89,10 +99,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
+    setUserRole(null);
+    setRoleLoading(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, userRole, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, roleLoading, userRole, signOut }}>
       {children}
     </AuthContext.Provider>
   );

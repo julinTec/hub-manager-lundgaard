@@ -35,8 +35,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, userRole } = useAuth();
-  if (loading) return <LoadingScreen message="Verificando permissões..." />;
+  const { user, loading, roleLoading, userRole } = useAuth();
+  if (loading || roleLoading) return <LoadingScreen message="Verificando permissões..." />;
   if (!user) return <Navigate to="/auth" replace />;
   if (userRole !== "admin") return <Navigate to="/hub" replace />;
   return <>{children}</>;
