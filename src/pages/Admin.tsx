@@ -782,7 +782,7 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Página inicial padrão</Label>
-                  <Select defaultValue="hub">
+                  <Select value={systemSettings.defaultHomePage} onValueChange={(value) => updateSetting("defaultHomePage", value)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="hub">Hub</SelectItem>
@@ -796,7 +796,7 @@ export default function Admin() {
                     <Label>Registrar alterações sensíveis</Label>
                     <p className="text-sm text-muted-foreground">Auditar exclusões e mudanças de perfil.</p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch checked={systemSettings.auditSensitiveChanges} onCheckedChange={(checked) => updateSetting("auditSensitiveChanges", checked)} />
                 </div>
                 <div className="flex items-center justify-between rounded-md border bg-background/70 p-3">
                   <div className="flex items-start gap-2">
@@ -806,16 +806,108 @@ export default function Admin() {
                       <p className="text-sm text-muted-foreground">Avisar sobre propostas aprovadas e conciliações divergentes.</p>
                     </div>
                   </div>
-                  <Switch />
+                  <Switch checked={systemSettings.administrativeNotifications} onCheckedChange={(checked) => updateSetting("administrativeNotifications", checked)} />
                 </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Confirmar antes de excluir</Label><Switch checked={systemSettings.confirmBeforeDelete} onCheckedChange={(checked) => updateSetting("confirmBeforeDelete", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Bloquear exclusão conciliada</Label><Switch checked={systemSettings.blockDeleteConciliatedEntries} onCheckedChange={(checked) => updateSetting("blockDeleteConciliatedEntries", checked)} /></div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2"><Label>Retenção de logs em dias</Label><Input type="number" value={systemSettings.logRetentionDays} onChange={(e) => updateSetting("logRetentionDays", e.target.value)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Permitir exportar logs</Label><Switch checked={systemSettings.allowLogExport} onCheckedChange={(checked) => updateSetting("allowLogExport", checked)} /></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-accent/20 bg-gradient-to-br from-accent/10 to-background">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Bell className="h-5 w-5 text-accent" />
+                  Notificações
+                </CardTitle>
+                <CardDescription>Eventos que devem gerar avisos administrativos.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>E-mail padrão para alertas</Label>
+                  <Input type="email" value={systemSettings.notificationEmail} onChange={(e) => updateSetting("notificationEmail", e.target.value)} placeholder="alertas@empresa.com" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Proposta enviada</Label><Switch checked={systemSettings.notifyProposalSent} onCheckedChange={(checked) => updateSetting("notifyProposalSent", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Proposta aceita</Label><Switch checked={systemSettings.notifyProposalAccepted} onCheckedChange={(checked) => updateSetting("notifyProposalAccepted", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Proposta rejeitada</Label><Switch checked={systemSettings.notifyProposalRejected} onCheckedChange={(checked) => updateSetting("notifyProposalRejected", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Cobrança pendente</Label><Switch checked={systemSettings.notifyPendingCharge} onCheckedChange={(checked) => updateSetting("notifyPendingCharge", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Serviço atrasado</Label><Switch checked={systemSettings.notifyDelayedService} onCheckedChange={(checked) => updateSetting("notifyDelayedService", checked)} /></div>
+                  <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Divergência na conciliação</Label><Switch checked={systemSettings.notifyConciliationDivergence} onCheckedChange={(checked) => updateSetting("notifyConciliationDivergence", checked)} /></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-muted bg-gradient-to-br from-secondary/50 to-background">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Settings className="h-5 w-5 text-primary" />
+                  Preferências Gerais
+                </CardTitle>
+                <CardDescription>Idioma, fuso, paginação e densidade da interface.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2"><Label>Idioma</Label><Select value={systemSettings.defaultLanguage} onValueChange={(value) => updateSetting("defaultLanguage", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pt-BR">Português</SelectItem><SelectItem value="en-US">Inglês</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Fuso horário</Label><Input value={systemSettings.timezone} onChange={(e) => updateSetting("timezone", e.target.value)} /></div>
+                  <div className="space-y-2"><Label>Formato de data</Label><Select value={systemSettings.dateFormat} onValueChange={(value) => updateSetting("dateFormat", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="dd/MM/yyyy">dd/MM/yyyy</SelectItem><SelectItem value="yyyy-MM-dd">yyyy-MM-dd</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Registros por página</Label><Input type="number" value={systemSettings.recordsPerPage} onChange={(e) => updateSetting("recordsPerPage", e.target.value)} /></div>
+                </div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Modo compacto da interface</Label><Switch checked={systemSettings.compactMode} onCheckedChange={(checked) => updateSetting("compactMode", checked)} /></div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-background to-primary/10">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  Permissões por Módulo
+                </CardTitle>
+                <CardDescription>Resumo visual dos acessos principais por perfil.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader><TableRow><TableHead>Perfil</TableHead><TableHead>Comercial</TableHead><TableHead>Financeiro</TableHead><TableHead>Operação</TableHead><TableHead>BI</TableHead><TableHead>Usuários</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {[
+                      ["Admin", "Sim", "Sim", "Sim", "Sim", "Sim"],
+                      ["Gerencial", "Ver", "Ver", "Ver", "Sim", "Não"],
+                      ["Comercial", "Sim", "Não", "Ver", "Parcial", "Não"],
+                      ["Financeiro", "Ver", "Sim", "Não", "Parcial", "Não"],
+                      ["Operação", "Ver", "Não", "Sim", "Parcial", "Não"],
+                    ].map((row) => <TableRow key={row[0]}>{row.map((cell) => <TableCell key={cell}><Badge variant={cell === "Não" ? "secondary" : "default"}>{cell}</Badge></TableCell>)}</TableRow>)}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-muted bg-gradient-to-br from-background to-secondary/40">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <SlidersHorizontal className="h-5 w-5 text-primary" />
+                  Integrações Futuras
+                </CardTitle>
+                <CardDescription>Chaves de ativação para recursos integrados futuros.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>E-mail transacional</Label><Switch checked={systemSettings.transactionalEmailEnabled} onCheckedChange={(checked) => updateSetting("transactionalEmailEnabled", checked)} /></div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>WhatsApp</Label><Switch checked={systemSettings.whatsappEnabled} onCheckedChange={(checked) => updateSetting("whatsappEnabled", checked)} /></div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Importação bancária</Label><Switch checked={systemSettings.bankImportEnabled} onCheckedChange={(checked) => updateSetting("bankImportEnabled", checked)} /></div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>Webhooks</Label><Switch checked={systemSettings.webhooksEnabled} onCheckedChange={(checked) => updateSetting("webhooksEnabled", checked)} /></div>
+                <div className="flex items-center justify-between rounded-md border bg-background/70 p-3"><Label>BI externo</Label><Switch checked={systemSettings.externalBiEnabled} onCheckedChange={(checked) => updateSetting("externalBiEnabled", checked)} /></div>
               </CardContent>
             </Card>
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={() => toast.success("Opções do sistema salvas!") }>
+            <Button disabled={isLoadingSettings || saveSettings.isPending} onClick={() => saveSettings.mutate()}>
               <Save className="h-4 w-4 mr-2" />
-              Salvar Opções
+              {saveSettings.isPending ? "Salvando..." : "Salvar Opções"}
             </Button>
           </div>
         </TabsContent>
