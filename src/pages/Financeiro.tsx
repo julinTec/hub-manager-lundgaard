@@ -86,15 +86,32 @@ export default function Financeiro() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold font-display">Movimentação Financeira</h1>
           <p className="text-muted-foreground mt-1">Lançamentos financeiros do grupo</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate("/conciliacao")}>
-            <ArrowLeftRight className="h-4 w-4 mr-2" /> Conciliação
-          </Button>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate("/conciliacao")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") navigate("/conciliacao");
+            }}
+            className="group w-full sm:w-[260px] cursor-pointer border-0 bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/15">
+                <ArrowLeftRight className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-base font-semibold leading-tight">Conciliação</p>
+                <p className="truncate text-xs text-primary-foreground/80">Conferir cobranças e pagamentos</p>
+              </div>
+            </CardContent>
+          </Card>
+          <div className="flex gap-2">
           <Button variant="outline" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-2" /> Exportar CSV
           </Button>
@@ -119,6 +136,7 @@ export default function Financeiro() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </div>
 
