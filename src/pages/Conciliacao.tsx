@@ -444,7 +444,7 @@ export default function Conciliacao() {
           counterparty_name: createForm.counterparty_name || null,
           amount_in: isEntrada ? amt : 0,
           amount_out: isEntrada ? 0 : amt,
-          entry_type: (isEntrada ? "entrada" : "saida") as any,
+          entry_type: (isEntrada ? "receita" : "despesa") as any,
           source_type: "manual" as const,
           user_id: user?.id,
         })
