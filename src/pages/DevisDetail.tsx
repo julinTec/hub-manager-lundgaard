@@ -128,21 +128,6 @@ export default function DevisDetail() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const updateStatus = useMutation({
-    mutationFn: async (newStatus: string) => {
-      if (requiresValidation(newStatus) && !devis?.validated_at) {
-        throw new Error("Valide a proposta antes de mover para este status.");
-      }
-      const { error } = await supabase.from("devis").update({ status: newStatus as any }).eq("id", id!);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Status atualizado!");
-      queryClient.invalidateQueries({ queryKey: ["devis"] });
-      queryClient.invalidateQueries({ queryKey: ["devis", id] });
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
 
   const handleGenerate = async () => {
     if (!form.meeting_report?.trim()) return;
