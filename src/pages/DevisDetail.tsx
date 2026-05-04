@@ -16,7 +16,7 @@ import { ArrowLeft, Pencil, Save, X, CalendarIcon, Sparkles, Loader2, Link as Li
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { ALL_STATUSES, STATUS_LABELS as statusLabels, STATUS_BADGE_CLASSES as devisStatusColors, requiresValidation } from "@/lib/devisStatus";
+import { STATUS_LABELS as statusLabels, STATUS_BADGE_CLASSES as devisStatusColors, requiresValidation } from "@/lib/devisStatus";
 import AISuggestionsBlock, { type AISuggestions } from "@/components/devis/AISuggestionsBlock";
 import ValidationChecklist from "@/components/devis/ValidationChecklist";
 import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
