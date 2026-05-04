@@ -305,53 +305,17 @@ export default function DevisDetail() {
             ) : <p className="font-medium mt-1">{client?.name || "—"}</p>}
           </div>
 
-          {/* Status — clicável direto (sem precisar editar) */}
+          {/* Status — read-only (controlado pelo Kanban Comercial) */}
           <div>
             <Label>Status</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="mt-1 inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity"
-                  title="Clique para alterar o status"
-                >
-                  <Badge variant="outline" className={devisStatusColors[devis.status] || ""}>
-                    {statusLabels[devis.status] || devis.status}
-                  </Badge>
-                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-1" align="start">
-                <div className="flex flex-col">
-                  {ALL_STATUSES.map((k) => {
-                    const blocked = requiresValidation(k) && !devis.validated_at;
-                    const isCurrent = k === devis.status;
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        disabled={blocked || isCurrent || updateStatus.isPending}
-                        onClick={() => updateStatus.mutate(k)}
-                        className={cn(
-                          "text-left text-sm px-2 py-1.5 rounded hover:bg-accent transition-colors flex items-center justify-between gap-2",
-                          (blocked || isCurrent) && "opacity-50 cursor-not-allowed hover:bg-transparent",
-                        )}
-                        title={blocked ? "Valide a proposta antes" : ""}
-                      >
-                        <span>{statusLabels[k]}</span>
-                        {blocked && <span>🔒</span>}
-                        {isCurrent && <span className="text-xs text-muted-foreground">atual</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-                {!devis.validated_at && (
-                  <p className="text-[10px] text-muted-foreground mt-1 px-2 pb-1">
-                    🔒 Valide a proposta para liberar status avançados
-                  </p>
-                )}
-              </PopoverContent>
-            </Popover>
+            <div className="mt-1 flex items-center gap-2">
+              <Badge variant="outline" className={devisStatusColors[devis.status] || ""}>
+                {statusLabels[devis.status] || devis.status}
+              </Badge>
+              <span className="text-[10px] text-muted-foreground">
+                Atualizado pelo Kanban Comercial
+              </span>
+            </div>
           </div>
 
           {/* Data Reunião */}
