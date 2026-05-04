@@ -152,7 +152,7 @@ export default function Financeiro() {
           <CardContent className="pt-6 flex items-center gap-4">
             <Clock className="h-8 w-8 text-warning" />
             <div>
-              <p className="text-sm text-muted-foreground">Entradas (pendentes)</p>
+              <p className="text-sm text-muted-foreground">Entradas (a receber)</p>
               <p className="text-xl font-bold font-display">{fmt(totalPendingIn)}</p>
             </div>
           </CardContent>
