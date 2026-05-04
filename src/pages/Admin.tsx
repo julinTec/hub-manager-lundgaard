@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Users, ScrollText, Plus, Pencil, Trash2, Settings, Building2, BriefcaseBusiness, WalletCards, ShieldCheck, Save, Bell, Palette, Hash, SlidersHorizontal } from "lucide-react";
+import { Users, ScrollText, Plus, Pencil, Trash2, Settings, Building2, BriefcaseBusiness, WalletCards, ShieldCheck, Save, Bell, Palette, Hash, SlidersHorizontal, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -301,6 +301,9 @@ export default function Admin() {
           <h1 className="text-3xl font-bold font-display">Opções / Usuários</h1>
           <p className="text-muted-foreground mt-1">Gerencie usuários e perfis do sistema</p>
         </div>
+        <Button variant="outline" onClick={() => (window.location.href = "/admin/api-keys")}>
+          <KeyRound className="h-4 w-4 mr-2" /> API Keys (BI)
+        </Button>
       </div>
 
       <Tabs defaultValue="users">
