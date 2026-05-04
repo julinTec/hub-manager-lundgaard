@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, ArrowLeft, Clock } from "lucide-react";
+import * as XLSX from "xlsx";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
