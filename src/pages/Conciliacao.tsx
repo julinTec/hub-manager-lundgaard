@@ -8,9 +8,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
 import { toast } from "sonner";
-import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft } from "lucide-react";
+import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { parseOfx, type ParsedOfxTx } from "@/lib/parseOfx";
+
+type BankStatementEntry = {
+  id: string;
+  transaction_date: string;
+  description: string | null;
+  amount: number;
+  direction: string | null;
+  conciliation_status: string;
+};
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -232,6 +246,69 @@ export default function Conciliacao() {
     },
   });
 
+  // Edit / delete state
+  const [editingEntry, setEditingEntry] = useState<BankStatementEntry | null>(null);
+  const [editForm, setEditForm] = useState({ transaction_date: "", description: "", direction: "entrada", amount: "0.00" });
+  const [deletingEntry, setDeletingEntry] = useState<BankStatementEntry | null>(null);
+
+  const openEdit = (s: any) => {
+    setEditingEntry(s);
+    setEditForm({
+      transaction_date: s.transaction_date ?? "",
+      description: s.description ?? "",
+      direction: s.direction ?? "entrada",
+      amount: Number(s.amount ?? 0).toFixed(2),
+    });
+  };
+
+  const updateEntry = useMutation({
+    mutationFn: async () => {
+      if (!editingEntry) throw new Error("Sem lançamento selecionado");
+      const { error } = await supabase
+        .from("bank_statement_entries")
+        .update({
+          transaction_date: editForm.transaction_date,
+          description: editForm.description,
+          direction: editForm.direction,
+          amount: Number(editForm.amount),
+        })
+        .eq("id", editingEntry.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento atualizado");
+      setEditingEntry(null);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+    },
+    onError: (err: any) => toast.error(`Erro ao atualizar: ${err.message ?? err}`),
+  });
+
+  const deleteEntry = useMutation({
+    mutationFn: async (entry: BankStatementEntry) => {
+      if (entry.conciliation_status === "conciliado") {
+        throw new Error("Lançamento conciliado. Rejeite a conciliação antes de excluir.");
+      }
+      // Remove related matches first
+      const { error: mErr } = await supabase
+        .from("conciliation_matches")
+        .delete()
+        .eq("bank_statement_entry_id", entry.id);
+      if (mErr) throw mErr;
+      const { error } = await supabase.from("bank_statement_entries").delete().eq("id", entry.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento excluído");
+      setDeletingEntry(null);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+      queryClient.invalidateQueries({ queryKey: ["conciliation-matches"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message ?? "Erro ao excluir");
+      setDeletingEntry(null);
+    },
+  });
+
   const conciliadoCount = statements.filter((s) => s.conciliation_status === "conciliado").length;
   const pendenteCount = statements.filter((s) => s.conciliation_status === "pendente").length;
   const totalEntradas = statements.filter((s) => s.direction === "entrada").reduce((s, e) => s + Number(e.amount), 0);
@@ -343,11 +420,12 @@ export default function Conciliacao() {
               <TableHead>Direção</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {statements.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
             ) : statements.filter((s) => !search || s.description?.toLowerCase().includes(search.toLowerCase())).map((s) => (
               <TableRow key={s.id}>
                 <TableCell>{s.transaction_date}</TableCell>
@@ -361,11 +439,82 @@ export default function Conciliacao() {
                 <TableCell>
                   <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>{s.conciliation_status}</Badge>
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="Editar">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingEntry} onOpenChange={(o) => !o && setEditingEntry(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar lançamento do extrato</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-date">Data</Label>
+              <Input id="edit-date" type="date" value={editForm.transaction_date} onChange={(e) => setEditForm((f) => ({ ...f, transaction_date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-desc">Descrição</Label>
+              <Input id="edit-desc" value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Direção</Label>
+              <Select value={editForm.direction} onValueChange={(v) => setEditForm((f) => ({ ...f, direction: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entrada">Entrada</SelectItem>
+                  <SelectItem value="saida">Saída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <CurrencyInputBRL value={editForm.amount} onChange={(v) => setEditForm((f) => ({ ...f, amount: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingEntry(null)}>Cancelar</Button>
+            <Button onClick={() => updateEntry.mutate()} disabled={updateEntry.isPending}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deletingEntry} onOpenChange={(o) => !o && setDeletingEntry(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação remove permanentemente o lançamento do extrato e quaisquer sugestões de conciliação relacionadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (deletingEntry) deleteEntry.mutate(deletingEntry);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
