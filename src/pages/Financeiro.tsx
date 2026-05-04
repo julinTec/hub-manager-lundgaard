@@ -128,8 +128,8 @@ export default function Financeiro() {
             </CardContent>
           </Card>
           <div className="flex gap-2">
-          <Button variant="outline" onClick={exportCSV}>
-            <Download className="h-4 w-4 mr-2" /> Exportar CSV
+          <Button variant="outline" onClick={exportXLSX}>
+            <Download className="h-4 w-4 mr-2" /> Exportar XLSX
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
