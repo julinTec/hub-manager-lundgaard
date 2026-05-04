@@ -309,6 +309,156 @@ export default function Conciliacao() {
     },
   });
 
+  // ---- Paired layout: filters, helpers, mutations ----
+  const [pairFilter, setPairFilter] = useState<string>("todos");
+  const [searchTarget, setSearchTarget] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [createTarget, setCreateTarget] = useState<any>(null);
+  const [createForm, setCreateForm] = useState({
+    entry_date: "",
+    business_unit: "",
+    movement_account: "",
+    movement_description: "",
+    counterparty_name: "",
+    amount: "0.00",
+  });
+
+  const openSearch = (stmt: any) => {
+    setSearchTarget(stmt);
+    setSearchTerm("");
+  };
+  const openCreate = (stmt: any) => {
+    setCreateTarget(stmt);
+    setCreateForm({
+      entry_date: stmt.transaction_date ?? "",
+      business_unit: "",
+      movement_account: "",
+      movement_description: stmt.description ?? "",
+      counterparty_name: "",
+      amount: Number(stmt.amount ?? 0).toFixed(2),
+    });
+  };
+
+  const weekday = (iso: string) => {
+    try {
+      return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" });
+    } catch {
+      return "";
+    }
+  };
+
+  // In-memory automatic suggestion (does not persist)
+  const autoSuggest = (stmt: any) => {
+    const candidates = financialEntries.filter((fe) => {
+      const feAmount = stmt.direction === "entrada" ? Number(fe.amount_in) : Number(fe.amount_out);
+      const amountMatch = Math.abs(feAmount - Number(stmt.amount)) < 0.01;
+      const dateDiff = Math.abs(new Date(fe.entry_date).getTime() - new Date(stmt.transaction_date).getTime());
+      const dateMatch = dateDiff < 5 * 24 * 60 * 60 * 1000;
+      return amountMatch && dateMatch;
+    });
+    return candidates[0] ?? null;
+  };
+
+  // Pair conciliation: create or update match + flip statuses
+  const conciliatePair = useMutation({
+    mutationFn: async ({ stmt, fe, existingMatchId }: { stmt: any; fe: any; existingMatchId?: string }) => {
+      let matchId = existingMatchId;
+      if (!matchId) {
+        const { data, error } = await supabase
+          .from("conciliation_matches")
+          .insert({
+            bank_statement_entry_id: stmt.id,
+            financial_entry_id: fe.id,
+            match_score: 100,
+            match_type: "manual" as const,
+            status: "confirmado" as const,
+            confirmed_by: user?.id,
+            confirmed_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        matchId = data.id;
+      } else {
+        const { error } = await supabase
+          .from("conciliation_matches")
+          .update({
+            financial_entry_id: fe.id,
+            status: "confirmado" as const,
+            confirmed_by: user?.id,
+            confirmed_at: new Date().toISOString(),
+          })
+          .eq("id", matchId);
+        if (error) throw error;
+      }
+      await supabase.from("bank_statement_entries").update({ conciliation_status: "conciliado" as const }).eq("id", stmt.id);
+      await supabase.from("financial_entries").update({ conciliation_status: "conciliado" as const }).eq("id", fe.id);
+    },
+    onSuccess: () => {
+      toast.success("Conciliado!");
+      queryClient.invalidateQueries();
+    },
+    onError: (e: any) => toast.error(`Erro: ${e.message ?? e}`),
+  });
+
+  // Undo conciliation
+  const undoMatch = useMutation({
+    mutationFn: async (matchId: string) => {
+      const m = matches.find((x) => x.id === matchId);
+      if (!m) throw new Error("Match não encontrado");
+      await supabase.from("conciliation_matches").delete().eq("id", matchId);
+      await supabase.from("bank_statement_entries").update({ conciliation_status: "pendente" as const }).eq("id", m.bank_statement_entry_id);
+      await supabase.from("financial_entries").update({ conciliation_status: "pendente" as const }).eq("id", m.financial_entry_id);
+    },
+    onSuccess: () => {
+      toast.success("Conciliação desfeita");
+      queryClient.invalidateQueries();
+    },
+  });
+
+  // Mark statement as ignored (uses 'divergente' status)
+  const ignoreEntry = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("bank_statement_entries").update({ conciliation_status: "divergente" as const }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento ignorado");
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+    },
+  });
+
+  // Create new financial entry and immediately pair
+  const createAndPair = useMutation({
+    mutationFn: async () => {
+      if (!createTarget) throw new Error("Sem alvo");
+      const isEntrada = createTarget.direction === "entrada";
+      const amt = Number(createForm.amount);
+      const { data: fe, error } = await supabase
+        .from("financial_entries")
+        .insert({
+          entry_date: createForm.entry_date,
+          business_unit: createForm.business_unit || null,
+          movement_account: createForm.movement_account || null,
+          movement_description: createForm.movement_description || null,
+          counterparty_name: createForm.counterparty_name || null,
+          amount_in: isEntrada ? amt : 0,
+          amount_out: isEntrada ? 0 : amt,
+          entry_type: (isEntrada ? "entrada" : "saida") as any,
+          source_type: "manual" as const,
+          user_id: user?.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      await conciliatePair.mutateAsync({ stmt: createTarget, fe });
+    },
+    onSuccess: () => {
+      setCreateTarget(null);
+    },
+    onError: (e: any) => toast.error(`Erro: ${e.message ?? e}`),
+  });
+
   const conciliadoCount = statements.filter((s) => s.conciliation_status === "conciliado").length;
   const pendenteCount = statements.filter((s) => s.conciliation_status === "pendente").length;
   const totalEntradas = statements.filter((s) => s.direction === "entrada").reduce((s, e) => s + Number(e.amount), 0);
@@ -316,6 +466,12 @@ export default function Conciliacao() {
   const fmt = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
   const suggestedMatches = matches.filter((m) => m.status === "sugerido");
+
+  const filteredStatements = statements.filter((s) => {
+    if (pairFilter !== "todos" && s.conciliation_status !== pairFilter) return false;
+    if (search && !s.description?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
