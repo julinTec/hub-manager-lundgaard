@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, ArrowLeft } from "lucide-react";
+import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, ArrowLeft, Clock } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -80,8 +80,11 @@ export default function Financeiro() {
     a.href = url; a.download = "movimentacao_financeira.csv"; a.click();
   };
 
-  const totalIn = entries.reduce((s, e) => s + Number(e.amount_in || 0), 0);
-  const totalOut = entries.reduce((s, e) => s + Number(e.amount_out || 0), 0);
+  const conciliated = entries.filter((e) => e.conciliation_status === "conciliado");
+  const pending = entries.filter((e) => e.conciliation_status === "pendente");
+  const totalIn = conciliated.reduce((s, e) => s + Number(e.amount_in || 0), 0);
+  const totalOut = conciliated.reduce((s, e) => s + Number(e.amount_out || 0), 0);
+  const totalPendingIn = pending.reduce((s, e) => s + Number(e.amount_in || 0), 0);
   const fmt = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
   return (
@@ -144,7 +147,16 @@ export default function Financeiro() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="pt-6 flex items-center gap-4">
+            <Clock className="h-8 w-8 text-warning" />
+            <div>
+              <p className="text-sm text-muted-foreground">Entradas (pendentes)</p>
+              <p className="text-xl font-bold font-display">{fmt(totalPendingIn)}</p>
+            </div>
+          </CardContent>
+        </Card>
         <Card>
           <CardContent className="pt-6 flex items-center gap-4">
             <ArrowDownCircle className="h-8 w-8 text-success" />
