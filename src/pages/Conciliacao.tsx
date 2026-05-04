@@ -253,9 +253,10 @@ export default function Conciliacao() {
           </Button>
           <label className="cursor-pointer">
             <Button variant="outline" asChild>
-              <span><Upload className="h-4 w-4 mr-2" /> Upload Extrato</span>
+              <span><Upload className="h-4 w-4 mr-2" /> Upload Extrato (PDF ou OFX)</span>
             </Button>
-            <input type="file" accept=".csv,.xlsx" className="hidden" onChange={handleUpload} />
+            <input type="file" accept=".ofx,.pdf,application/pdf" className="hidden" onChange={handleUpload} />
+
           </label>
           <Button onClick={() => suggestMatches.mutate()} disabled={suggestMatches.isPending}>
             <Link2 className="h-4 w-4 mr-2" /> Sugerir Conciliações
