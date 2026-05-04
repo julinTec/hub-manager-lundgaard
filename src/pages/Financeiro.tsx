@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Search, Download, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, ArrowLeft, Clock } from "lucide-react";
+import * as XLSX from "xlsx";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -70,14 +71,23 @@ export default function Financeiro() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const exportCSV = () => {
+  const exportXLSX = () => {
     const headers = ["Data", "Negócio", "Conta Mov.", "Descrição", "Fornecedor/Cliente", "Entrada", "Saída", "Status", "Origem"];
-    const rows = entries.map((e) => [e.entry_date, e.business_unit, e.movement_account, e.movement_description, e.counterparty_name, e.amount_in, e.amount_out, e.conciliation_status, e.source_type]);
-    const csv = [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "movimentacao_financeira.csv"; a.click();
+    const rows = entries.map((e) => [
+      e.entry_date,
+      e.business_unit,
+      e.movement_account,
+      e.movement_description,
+      e.counterparty_name,
+      Number(e.amount_in || 0),
+      Number(e.amount_out || 0),
+      e.conciliation_status,
+      e.source_type,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Movimentação");
+    XLSX.writeFile(wb, "movimentacao_financeira.xlsx");
   };
 
   const conciliated = entries.filter((e) => e.conciliation_status === "conciliado");
@@ -118,8 +128,8 @@ export default function Financeiro() {
             </CardContent>
           </Card>
           <div className="flex gap-2">
-          <Button variant="outline" onClick={exportCSV}>
-            <Download className="h-4 w-4 mr-2" /> Exportar CSV
+          <Button variant="outline" onClick={exportXLSX}>
+            <Download className="h-4 w-4 mr-2" /> Exportar XLSX
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
