@@ -8,9 +8,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
 import { toast } from "sonner";
-import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft } from "lucide-react";
+import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft, Pencil, Trash2 } from "lucide-react";
 import { parseOfx, type ParsedOfxTx } from "@/lib/parseOfx";
+
+type BankStatementEntry = {
+  id: string;
+  transaction_date: string;
+  description: string | null;
+  amount: number;
+  direction: string | null;
+  conciliation_status: string;
+};
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
