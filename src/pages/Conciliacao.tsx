@@ -735,6 +735,103 @@ export default function Conciliacao() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Search financial entry dialog */}
+      <Dialog open={!!searchTarget} onOpenChange={(o) => !o && setSearchTarget(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Buscar lançamento interno</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Buscar por descrição, fornecedor..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              autoFocus
+            />
+            <div className="max-h-[400px] overflow-y-auto divide-y border rounded-md">
+              {financialEntries
+                .filter((fe) => {
+                  if (!searchTerm) return true;
+                  const t = searchTerm.toLowerCase();
+                  return (
+                    fe.movement_description?.toLowerCase().includes(t) ||
+                    fe.counterparty_name?.toLowerCase().includes(t) ||
+                    String(fe.amount_in ?? "").includes(t) ||
+                    String(fe.amount_out ?? "").includes(t)
+                  );
+                })
+                .slice(0, 50)
+                .map((fe) => (
+                  <button
+                    key={fe.id}
+                    className="w-full text-left p-3 hover:bg-accent transition-colors"
+                    onClick={() => {
+                      if (searchTarget) {
+                        conciliatePair.mutate({ stmt: searchTarget, fe });
+                        setSearchTarget(null);
+                      }
+                    }}
+                  >
+                    <div className="flex justify-between gap-2">
+                      <div className="text-sm font-medium">{fe.movement_description || "(sem descrição)"}</div>
+                      <div className="text-sm font-bold">{fmt(Number(fe.amount_in || fe.amount_out || 0))}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {fe.entry_date} · {fe.counterparty_name || "—"} {fe.business_unit ? `· ${fe.business_unit}` : ""}
+                    </div>
+                  </button>
+                ))}
+              {financialEntries.length === 0 && (
+                <div className="p-6 text-center text-sm text-muted-foreground">Nenhum lançamento pendente.</div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create new financial entry dialog */}
+      <Dialog open={!!createTarget} onOpenChange={(o) => !o && setCreateTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo lançamento financeiro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Data</Label>
+              <Input type="date" value={createForm.entry_date} onChange={(e) => setCreateForm((f) => ({ ...f, entry_date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Input value={createForm.movement_description} onChange={(e) => setCreateForm((f) => ({ ...f, movement_description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fornecedor / Cliente</Label>
+              <Input value={createForm.counterparty_name} onChange={(e) => setCreateForm((f) => ({ ...f, counterparty_name: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Negócio (BU)</Label>
+                <Input value={createForm.business_unit} onChange={(e) => setCreateForm((f) => ({ ...f, business_unit: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Conta movimento</Label>
+                <Input value={createForm.movement_account} onChange={(e) => setCreateForm((f) => ({ ...f, movement_account: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <CurrencyInputBRL value={createForm.amount} onChange={(v) => setCreateForm((f) => ({ ...f, amount: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateTarget(null)}>Cancelar</Button>
+            <Button onClick={() => createAndPair.mutate()} disabled={createAndPair.isPending}>
+              Criar e conciliar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
