@@ -1,52 +1,44 @@
-# Ajuste do Upload de Extrato Bancário (PDF e OFX)
+# Cards Financeiros: Separar Pendentes de Realizados
 
-Hoje a página `Conciliação` aceita apenas `.csv,.xlsx` e o handler processa tudo como CSV com separador `;`. Vamos trocar para os formatos reais de extrato bancário: **PDF** e **OFX**.
+## Problema
+Hoje os cards "Total Entradas", "Total Saídas" e "Saldo" somam **todos** os lançamentos, incluindo os que ainda não foram pagos pelo cliente (status `pendente`). Isso infla o caixa real.
 
-## Mudanças
+## Mudança em `src/pages/Financeiro.tsx`
 
-### 1. `src/pages/Conciliacao.tsx`
-- Trocar `accept=".csv,.xlsx"` por `accept=".ofx,.pdf"` no input de upload.
-- Atualizar o texto/label do botão para deixar claro: "Upload Extrato (PDF ou OFX)".
-- Reescrever `handleUpload` para detectar o tipo do arquivo pela extensão e direcionar para o parser correto:
-  - `.ofx` → parser OFX local (no navegador).
-  - `.pdf` → enviar para uma edge function que extrai as transações.
-- Manter a mesma lógica de criação de `import_batches` e inserção em `bank_statement_entries` (campos: `transaction_date`, `description`, `amount`, `direction`, `import_batch_id`, `raw_payload`).
+### 1. Ajustar os totais existentes
+Filtrar `entries` para considerar apenas lançamentos **conciliados** (`conciliation_status === "conciliado"`) nos totais de:
+- Total Entradas
+- Total Saídas
+- Saldo
 
-### 2. Parser OFX (client-side)
-- Criar `src/lib/parseOfx.ts` que recebe o texto do arquivo e devolve uma lista de transações `{ date, description, amount, direction }`.
-- OFX é um formato semi-XML com tags `<STMTTRN>`, `<DTPOSTED>`, `<TRNAMT>`, `<MEMO>`/`<NAME>`. Faremos parsing por regex (suficiente e sem dependência extra), tratando datas no formato `YYYYMMDD[HHMMSS]` e `direction` por sinal do `TRNAMT`.
+Lançamentos `pendente`, `divergente` e `ignorado` ficam fora desses três cards (ou seja, "zerados" enquanto não houver entrada efetiva em caixa).
 
-### 3. Parser PDF (edge function)
-- Criar edge function `supabase/functions/parse-bank-statement-pdf/index.ts`.
-- Recebe o PDF em base64, envia para o **Lovable AI Gateway** (modelo `google/gemini-2.5-flash` com input multimodal/PDF) com um prompt pedindo as transações em JSON estrito: `[{ date: "YYYY-MM-DD", description, amount, direction: "entrada"|"saida" }]`.
-- Retorna o array já normalizado para o front-end inserir em `bank_statement_entries`.
-- Sem necessidade de API key adicional (usa `LOVABLE_API_KEY` já disponível no Cloud).
-- Configurar `verify_jwt = false` no `supabase/config.toml` apenas se necessário; manter padrão (autenticada) já que o usuário está logado.
+### 2. Novo card "Entradas (pendentes)"
+- **Posição**: primeiro card da grade (antes de "Total Entradas").
+- **Valor**: soma de `amount_in` de todos os lançamentos com `conciliation_status === "pendente"`.
+- **Visual**: ícone `Clock` (lucide-react) em cor `warning`, mesmo padrão visual dos outros cards (ícone à esquerda + label + valor).
 
-### 4. Feedback ao usuário
-- Toasts diferenciados para "Lendo PDF..." (pode demorar) vs OFX (instantâneo).
-- Mensagens de erro claras quando o arquivo não tem transações reconhecíveis.
+### 3. Grid layout
+Alterar de `md:grid-cols-3` para `md:grid-cols-2 lg:grid-cols-4` para acomodar 4 cards mantendo bom espaçamento na viewport atual (1336px).
 
-## Detalhes Técnicos
+## Detalhes técnicos
 
-**Detecção de formato**
-```
-const ext = file.name.toLowerCase().split('.').pop();
-if (ext === 'ofx') { ...parse local... }
-else if (ext === 'pdf') { ...invoke edge function... }
-else toast.error("Formato inválido. Use PDF ou OFX.");
+```ts
+const conciliated = entries.filter(e => e.conciliation_status === "conciliado");
+const pending = entries.filter(e => e.conciliation_status === "pendente");
+
+const totalIn = conciliated.reduce((s, e) => s + Number(e.amount_in || 0), 0);
+const totalOut = conciliated.reduce((s, e) => s + Number(e.amount_out || 0), 0);
+const totalPendingIn = pending.reduce((s, e) => s + Number(e.amount_in || 0), 0);
 ```
 
-**Edge function chamada via**
-```
-const { data, error } = await supabase.functions.invoke('parse-bank-statement-pdf', {
-  body: { fileBase64, fileName }
-});
-```
-
-**Inserção** continua igual ao fluxo atual (loop por transação criando `bank_statement_entries` com `import_batch_id`).
+Ordem dos cards na UI:
+1. **Entradas (pendentes)** — `Clock`, cor warning
+2. **Total Entradas** — `ArrowDownCircle`, cor success (apenas conciliados)
+3. **Total Saídas** — `ArrowUpCircle`, cor destructive (apenas conciliados)
+4. **Saldo** — apenas conciliados (`totalIn - totalOut`)
 
 ## Fora do escopo
-- Não vamos remover suporte a outros formatos no banco/lógica de matching (continua igual).
-- Não mexemos em `ValidationChecklist`, Kanban, ou outras telas.
-- Não criamos UI nova de pré-visualização das transações antes de importar (mantém o fluxo direto atual).
+- Não alteramos a tabela de lançamentos nem os filtros existentes.
+- Não tocamos em RLS, schema ou outras páginas.
+- O badge de status na tabela continua mostrando o estado individual de cada lançamento.
