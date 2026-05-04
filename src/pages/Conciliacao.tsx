@@ -365,94 +365,158 @@ export default function Conciliacao() {
         </CardContent></Card>
       </div>
 
-      {/* Match Suggestions */}
-      {suggestedMatches.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><ArrowLeftRight className="h-5 w-5" /> Sugestões de Conciliação</CardTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Extrato</TableHead>
-                  <TableHead>Lançamento</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suggestedMatches.map((m) => {
-                  const stmt = statements.find((s) => s.id === m.bank_statement_entry_id);
-                  const fe = financialEntries.find((f) => f.id === m.financial_entry_id);
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-sm">{stmt?.transaction_date} - {stmt?.description} ({fmt(Number(stmt?.amount || 0))})</TableCell>
-                      <TableCell className="text-sm">{fe?.entry_date} - {fe?.movement_description} ({fmt(Number(fe?.amount_in || fe?.amount_out || 0))})</TableCell>
-                      <TableCell><Badge variant="outline">{m.match_score}%</Badge></TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline" onClick={() => confirmMatch.mutate(m.id)} className="text-success"><CheckCircle className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="outline" onClick={() => rejectMatch.mutate(m.id)} className="text-destructive"><XCircle className="h-4 w-4" /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Bank Statement Table */}
+      {/* Paired conciliation layout (estilo Conta Azul) */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Extrato Bancário Importado</CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ArrowLeftRight className="h-5 w-5" /> Conciliação por par
+          </CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select value={pairFilter} onValueChange={setPairFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="pendente">Pendentes</SelectItem>
+                <SelectItem value="conciliado">Conciliados</SelectItem>
+                <SelectItem value="divergente">Ignorados</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Direção</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {statements.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
-            ) : statements.filter((s) => !search || s.description?.toLowerCase().includes(search.toLowerCase())).map((s) => (
-              <TableRow key={s.id}>
-                <TableCell>{s.transaction_date}</TableCell>
-                <TableCell className="max-w-[300px] truncate">{s.description}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={s.direction === "entrada" ? "text-success" : "text-destructive"}>
-                    {s.direction}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right font-medium">{fmt(Number(s.amount))}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>{s.conciliation_status}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+        <CardContent className="space-y-3">
+          {/* Header das colunas (desktop) */}
+          <div className="hidden lg:grid grid-cols-[1fr_auto_1fr] gap-4 px-2 text-xs font-semibold text-muted-foreground uppercase">
+            <div className="flex items-center gap-2"><Banknote className="h-4 w-4" /> Lançamentos do banco</div>
+            <div className="w-[120px] text-center">Ação</div>
+            <div className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Lançamentos internos</div>
+          </div>
+
+          {filteredStatements.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Nenhum lançamento encontrado. Faça upload de um extrato (PDF ou OFX) para começar.
+            </div>
+          ) : (
+            filteredStatements.map((s) => {
+              const persistedMatch = matches.find(
+                (m) => m.bank_statement_entry_id === s.id && (m.status === "sugerido" || m.status === "confirmado"),
+              );
+              const matchedFE = persistedMatch
+                ? financialEntries.find((f) => f.id === persistedMatch.financial_entry_id)
+                : autoSuggest(s);
+              const isConciliado = s.conciliation_status === "conciliado";
+              const isIgnorado = s.conciliation_status === "divergente";
+
+              return (
+                <div
+                  key={s.id}
+                  className={`grid lg:grid-cols-[1fr_auto_1fr] gap-3 lg:gap-4 items-stretch rounded-lg border p-3 ${
+                    isConciliado ? "bg-success/5 border-success/30" : isIgnorado ? "bg-muted/30" : "bg-background"
+                  }`}
+                >
+                  {/* Card extrato */}
+                  <div className="rounded-md border bg-card p-3 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        {s.transaction_date} · {weekday(s.transaction_date)}
+                      </div>
+                      <div className={`text-sm font-bold ${s.direction === "entrada" ? "text-success" : "text-destructive"}`}>
+                        {s.direction === "saida" ? "-" : ""}{fmt(Number(s.amount))}
+                      </div>
+                    </div>
+                    <div className="text-sm font-medium leading-snug">{s.description || "(sem descrição)"}</div>
+                    <div className="flex items-center justify-between mt-auto pt-2">
+                      <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>
+                        {s.conciliation_status}
+                      </Badge>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="Editar">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        {!isConciliado && !isIgnorado && (
+                          <Button size="sm" variant="ghost" onClick={() => ignoreEntry.mutate(s.id)} title="Ignorar">
+                            <EyeOff className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+
+                  {/* Botão central */}
+                  <div className="flex lg:flex-col items-center justify-center gap-2 lg:w-[120px]">
+                    {isConciliado ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => persistedMatch && undoMatch.mutate(persistedMatch.id)}
+                        disabled={!persistedMatch || undoMatch.isPending}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" /> Desfazer
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => matchedFE && conciliatePair.mutate({ stmt: s, fe: matchedFE, existingMatchId: persistedMatch?.id })}
+                        disabled={!matchedFE || conciliatePair.isPending}
+                        title={matchedFE ? "Conciliar par" : "Selecione um lançamento à direita"}
+                      >
+                        <Link2 className="h-4 w-4 mr-1" /> Conciliar
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Card lançamento interno */}
+                  <div className={`rounded-md border p-3 flex flex-col gap-2 ${matchedFE ? "bg-card" : "bg-muted/30 border-dashed"}`}>
+                    {matchedFE ? (
+                      <>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs text-muted-foreground">
+                            {matchedFE.entry_date} {matchedFE.business_unit ? `· ${matchedFE.business_unit}` : ""}
+                          </div>
+                          <div className="text-sm font-bold">
+                            {fmt(Number(matchedFE.amount_in || matchedFE.amount_out || 0))}
+                          </div>
+                        </div>
+                        <div className="text-sm font-medium leading-snug">
+                          {matchedFE.movement_description || "(sem descrição)"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {matchedFE.counterparty_name || "—"}
+                          {matchedFE.movement_account ? ` · ${matchedFE.movement_account}` : ""}
+                        </div>
+                        {!isConciliado && (
+                          <div className="flex justify-end gap-1 mt-auto pt-2">
+                            <Button size="sm" variant="ghost" onClick={() => openSearch(s)}>
+                              Trocar
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center gap-2 py-4">
+                        <p className="text-xs text-muted-foreground">Sem candidato automático</p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openSearch(s)}>
+                            <Search className="h-4 w-4 mr-1" /> Buscar
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => openCreate(s)}>
+                            <Plus className="h-4 w-4 mr-1" /> Novo
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
       </Card>
 
       {/* Edit Dialog */}
