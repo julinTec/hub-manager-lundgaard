@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { CurrencyInputBRL } from "@/components/ui/currency-input-brl";
 import { toast } from "sonner";
-import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft, Pencil, Trash2, Building2, Banknote, Plus, RotateCcw, EyeOff } from "lucide-react";
 import { parseOfx, type ParsedOfxTx } from "@/lib/parseOfx";
 
 type BankStatementEntry = {
@@ -309,6 +309,156 @@ export default function Conciliacao() {
     },
   });
 
+  // ---- Paired layout: filters, helpers, mutations ----
+  const [pairFilter, setPairFilter] = useState<string>("todos");
+  const [searchTarget, setSearchTarget] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [createTarget, setCreateTarget] = useState<any>(null);
+  const [createForm, setCreateForm] = useState({
+    entry_date: "",
+    business_unit: "",
+    movement_account: "",
+    movement_description: "",
+    counterparty_name: "",
+    amount: "0.00",
+  });
+
+  const openSearch = (stmt: any) => {
+    setSearchTarget(stmt);
+    setSearchTerm("");
+  };
+  const openCreate = (stmt: any) => {
+    setCreateTarget(stmt);
+    setCreateForm({
+      entry_date: stmt.transaction_date ?? "",
+      business_unit: "",
+      movement_account: "",
+      movement_description: stmt.description ?? "",
+      counterparty_name: "",
+      amount: Number(stmt.amount ?? 0).toFixed(2),
+    });
+  };
+
+  const weekday = (iso: string) => {
+    try {
+      return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" });
+    } catch {
+      return "";
+    }
+  };
+
+  // In-memory automatic suggestion (does not persist)
+  const autoSuggest = (stmt: any) => {
+    const candidates = financialEntries.filter((fe) => {
+      const feAmount = stmt.direction === "entrada" ? Number(fe.amount_in) : Number(fe.amount_out);
+      const amountMatch = Math.abs(feAmount - Number(stmt.amount)) < 0.01;
+      const dateDiff = Math.abs(new Date(fe.entry_date).getTime() - new Date(stmt.transaction_date).getTime());
+      const dateMatch = dateDiff < 5 * 24 * 60 * 60 * 1000;
+      return amountMatch && dateMatch;
+    });
+    return candidates[0] ?? null;
+  };
+
+  // Pair conciliation: create or update match + flip statuses
+  const conciliatePair = useMutation({
+    mutationFn: async ({ stmt, fe, existingMatchId }: { stmt: any; fe: any; existingMatchId?: string }) => {
+      let matchId = existingMatchId;
+      if (!matchId) {
+        const { data, error } = await supabase
+          .from("conciliation_matches")
+          .insert({
+            bank_statement_entry_id: stmt.id,
+            financial_entry_id: fe.id,
+            match_score: 100,
+            match_type: "manual" as const,
+            status: "confirmado" as const,
+            confirmed_by: user?.id,
+            confirmed_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        matchId = data.id;
+      } else {
+        const { error } = await supabase
+          .from("conciliation_matches")
+          .update({
+            financial_entry_id: fe.id,
+            status: "confirmado" as const,
+            confirmed_by: user?.id,
+            confirmed_at: new Date().toISOString(),
+          })
+          .eq("id", matchId);
+        if (error) throw error;
+      }
+      await supabase.from("bank_statement_entries").update({ conciliation_status: "conciliado" as const }).eq("id", stmt.id);
+      await supabase.from("financial_entries").update({ conciliation_status: "conciliado" as const }).eq("id", fe.id);
+    },
+    onSuccess: () => {
+      toast.success("Conciliado!");
+      queryClient.invalidateQueries();
+    },
+    onError: (e: any) => toast.error(`Erro: ${e.message ?? e}`),
+  });
+
+  // Undo conciliation
+  const undoMatch = useMutation({
+    mutationFn: async (matchId: string) => {
+      const m = matches.find((x) => x.id === matchId);
+      if (!m) throw new Error("Match não encontrado");
+      await supabase.from("conciliation_matches").delete().eq("id", matchId);
+      await supabase.from("bank_statement_entries").update({ conciliation_status: "pendente" as const }).eq("id", m.bank_statement_entry_id);
+      await supabase.from("financial_entries").update({ conciliation_status: "pendente" as const }).eq("id", m.financial_entry_id);
+    },
+    onSuccess: () => {
+      toast.success("Conciliação desfeita");
+      queryClient.invalidateQueries();
+    },
+  });
+
+  // Mark statement as ignored (uses 'divergente' status)
+  const ignoreEntry = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("bank_statement_entries").update({ conciliation_status: "divergente" as const }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento ignorado");
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+    },
+  });
+
+  // Create new financial entry and immediately pair
+  const createAndPair = useMutation({
+    mutationFn: async () => {
+      if (!createTarget) throw new Error("Sem alvo");
+      const isEntrada = createTarget.direction === "entrada";
+      const amt = Number(createForm.amount);
+      const { data: fe, error } = await supabase
+        .from("financial_entries")
+        .insert({
+          entry_date: createForm.entry_date,
+          business_unit: createForm.business_unit || null,
+          movement_account: createForm.movement_account || null,
+          movement_description: createForm.movement_description || null,
+          counterparty_name: createForm.counterparty_name || null,
+          amount_in: isEntrada ? amt : 0,
+          amount_out: isEntrada ? 0 : amt,
+          entry_type: (isEntrada ? "receita" : "despesa") as any,
+          source_type: "manual" as const,
+          user_id: user?.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      await conciliatePair.mutateAsync({ stmt: createTarget, fe });
+    },
+    onSuccess: () => {
+      setCreateTarget(null);
+    },
+    onError: (e: any) => toast.error(`Erro: ${e.message ?? e}`),
+  });
+
   const conciliadoCount = statements.filter((s) => s.conciliation_status === "conciliado").length;
   const pendenteCount = statements.filter((s) => s.conciliation_status === "pendente").length;
   const totalEntradas = statements.filter((s) => s.direction === "entrada").reduce((s, e) => s + Number(e.amount), 0);
@@ -316,6 +466,12 @@ export default function Conciliacao() {
   const fmt = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
   const suggestedMatches = matches.filter((m) => m.status === "sugerido");
+
+  const filteredStatements = statements.filter((s) => {
+    if (pairFilter !== "todos" && s.conciliation_status !== pairFilter) return false;
+    if (search && !s.description?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -365,94 +521,158 @@ export default function Conciliacao() {
         </CardContent></Card>
       </div>
 
-      {/* Match Suggestions */}
-      {suggestedMatches.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><ArrowLeftRight className="h-5 w-5" /> Sugestões de Conciliação</CardTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Extrato</TableHead>
-                  <TableHead>Lançamento</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suggestedMatches.map((m) => {
-                  const stmt = statements.find((s) => s.id === m.bank_statement_entry_id);
-                  const fe = financialEntries.find((f) => f.id === m.financial_entry_id);
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-sm">{stmt?.transaction_date} - {stmt?.description} ({fmt(Number(stmt?.amount || 0))})</TableCell>
-                      <TableCell className="text-sm">{fe?.entry_date} - {fe?.movement_description} ({fmt(Number(fe?.amount_in || fe?.amount_out || 0))})</TableCell>
-                      <TableCell><Badge variant="outline">{m.match_score}%</Badge></TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline" onClick={() => confirmMatch.mutate(m.id)} className="text-success"><CheckCircle className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="outline" onClick={() => rejectMatch.mutate(m.id)} className="text-destructive"><XCircle className="h-4 w-4" /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Bank Statement Table */}
+      {/* Paired conciliation layout (estilo Conta Azul) */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Extrato Bancário Importado</CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ArrowLeftRight className="h-5 w-5" /> Conciliação por par
+          </CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <Select value={pairFilter} onValueChange={setPairFilter}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="pendente">Pendentes</SelectItem>
+                <SelectItem value="conciliado">Conciliados</SelectItem>
+                <SelectItem value="divergente">Ignorados</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Direção</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {statements.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
-            ) : statements.filter((s) => !search || s.description?.toLowerCase().includes(search.toLowerCase())).map((s) => (
-              <TableRow key={s.id}>
-                <TableCell>{s.transaction_date}</TableCell>
-                <TableCell className="max-w-[300px] truncate">{s.description}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={s.direction === "entrada" ? "text-success" : "text-destructive"}>
-                    {s.direction}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right font-medium">{fmt(Number(s.amount))}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>{s.conciliation_status}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+        <CardContent className="space-y-3">
+          {/* Header das colunas (desktop) */}
+          <div className="hidden lg:grid grid-cols-[1fr_auto_1fr] gap-4 px-2 text-xs font-semibold text-muted-foreground uppercase">
+            <div className="flex items-center gap-2"><Banknote className="h-4 w-4" /> Lançamentos do banco</div>
+            <div className="w-[120px] text-center">Ação</div>
+            <div className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Lançamentos internos</div>
+          </div>
+
+          {filteredStatements.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Nenhum lançamento encontrado. Faça upload de um extrato (PDF ou OFX) para começar.
+            </div>
+          ) : (
+            filteredStatements.map((s) => {
+              const persistedMatch = matches.find(
+                (m) => m.bank_statement_entry_id === s.id && (m.status === "sugerido" || m.status === "confirmado"),
+              );
+              const matchedFE = persistedMatch
+                ? financialEntries.find((f) => f.id === persistedMatch.financial_entry_id)
+                : autoSuggest(s);
+              const isConciliado = s.conciliation_status === "conciliado";
+              const isIgnorado = s.conciliation_status === "divergente";
+
+              return (
+                <div
+                  key={s.id}
+                  className={`grid lg:grid-cols-[1fr_auto_1fr] gap-3 lg:gap-4 items-stretch rounded-lg border p-3 ${
+                    isConciliado ? "bg-success/5 border-success/30" : isIgnorado ? "bg-muted/30" : "bg-background"
+                  }`}
+                >
+                  {/* Card extrato */}
+                  <div className="rounded-md border bg-card p-3 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        {s.transaction_date} · {weekday(s.transaction_date)}
+                      </div>
+                      <div className={`text-sm font-bold ${s.direction === "entrada" ? "text-success" : "text-destructive"}`}>
+                        {s.direction === "saida" ? "-" : ""}{fmt(Number(s.amount))}
+                      </div>
+                    </div>
+                    <div className="text-sm font-medium leading-snug">{s.description || "(sem descrição)"}</div>
+                    <div className="flex items-center justify-between mt-auto pt-2">
+                      <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>
+                        {s.conciliation_status}
+                      </Badge>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="Editar">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        {!isConciliado && !isIgnorado && (
+                          <Button size="sm" variant="ghost" onClick={() => ignoreEntry.mutate(s.id)} title="Ignorar">
+                            <EyeOff className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+
+                  {/* Botão central */}
+                  <div className="flex lg:flex-col items-center justify-center gap-2 lg:w-[120px]">
+                    {isConciliado ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => persistedMatch && undoMatch.mutate(persistedMatch.id)}
+                        disabled={!persistedMatch || undoMatch.isPending}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" /> Desfazer
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => matchedFE && conciliatePair.mutate({ stmt: s, fe: matchedFE, existingMatchId: persistedMatch?.id })}
+                        disabled={!matchedFE || conciliatePair.isPending}
+                        title={matchedFE ? "Conciliar par" : "Selecione um lançamento à direita"}
+                      >
+                        <Link2 className="h-4 w-4 mr-1" /> Conciliar
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Card lançamento interno */}
+                  <div className={`rounded-md border p-3 flex flex-col gap-2 ${matchedFE ? "bg-card" : "bg-muted/30 border-dashed"}`}>
+                    {matchedFE ? (
+                      <>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs text-muted-foreground">
+                            {matchedFE.entry_date} {matchedFE.business_unit ? `· ${matchedFE.business_unit}` : ""}
+                          </div>
+                          <div className="text-sm font-bold">
+                            {fmt(Number(matchedFE.amount_in || matchedFE.amount_out || 0))}
+                          </div>
+                        </div>
+                        <div className="text-sm font-medium leading-snug">
+                          {matchedFE.movement_description || "(sem descrição)"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {matchedFE.counterparty_name || "—"}
+                          {matchedFE.movement_account ? ` · ${matchedFE.movement_account}` : ""}
+                        </div>
+                        {!isConciliado && (
+                          <div className="flex justify-end gap-1 mt-auto pt-2">
+                            <Button size="sm" variant="ghost" onClick={() => openSearch(s)}>
+                              Trocar
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center gap-2 py-4">
+                        <p className="text-xs text-muted-foreground">Sem candidato automático</p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openSearch(s)}>
+                            <Search className="h-4 w-4 mr-1" /> Buscar
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => openCreate(s)}>
+                            <Plus className="h-4 w-4 mr-1" /> Novo
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
       </Card>
 
       {/* Edit Dialog */}
@@ -515,6 +735,103 @@ export default function Conciliacao() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Search financial entry dialog */}
+      <Dialog open={!!searchTarget} onOpenChange={(o) => !o && setSearchTarget(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Buscar lançamento interno</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Buscar por descrição, fornecedor..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              autoFocus
+            />
+            <div className="max-h-[400px] overflow-y-auto divide-y border rounded-md">
+              {financialEntries
+                .filter((fe) => {
+                  if (!searchTerm) return true;
+                  const t = searchTerm.toLowerCase();
+                  return (
+                    fe.movement_description?.toLowerCase().includes(t) ||
+                    fe.counterparty_name?.toLowerCase().includes(t) ||
+                    String(fe.amount_in ?? "").includes(t) ||
+                    String(fe.amount_out ?? "").includes(t)
+                  );
+                })
+                .slice(0, 50)
+                .map((fe) => (
+                  <button
+                    key={fe.id}
+                    className="w-full text-left p-3 hover:bg-accent transition-colors"
+                    onClick={() => {
+                      if (searchTarget) {
+                        conciliatePair.mutate({ stmt: searchTarget, fe });
+                        setSearchTarget(null);
+                      }
+                    }}
+                  >
+                    <div className="flex justify-between gap-2">
+                      <div className="text-sm font-medium">{fe.movement_description || "(sem descrição)"}</div>
+                      <div className="text-sm font-bold">{fmt(Number(fe.amount_in || fe.amount_out || 0))}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {fe.entry_date} · {fe.counterparty_name || "—"} {fe.business_unit ? `· ${fe.business_unit}` : ""}
+                    </div>
+                  </button>
+                ))}
+              {financialEntries.length === 0 && (
+                <div className="p-6 text-center text-sm text-muted-foreground">Nenhum lançamento pendente.</div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create new financial entry dialog */}
+      <Dialog open={!!createTarget} onOpenChange={(o) => !o && setCreateTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo lançamento financeiro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Data</Label>
+              <Input type="date" value={createForm.entry_date} onChange={(e) => setCreateForm((f) => ({ ...f, entry_date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Input value={createForm.movement_description} onChange={(e) => setCreateForm((f) => ({ ...f, movement_description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fornecedor / Cliente</Label>
+              <Input value={createForm.counterparty_name} onChange={(e) => setCreateForm((f) => ({ ...f, counterparty_name: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Negócio (BU)</Label>
+                <Input value={createForm.business_unit} onChange={(e) => setCreateForm((f) => ({ ...f, business_unit: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Conta movimento</Label>
+                <Input value={createForm.movement_account} onChange={(e) => setCreateForm((f) => ({ ...f, movement_account: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <CurrencyInputBRL value={createForm.amount} onChange={(v) => setCreateForm((f) => ({ ...f, amount: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateTarget(null)}>Cancelar</Button>
+            <Button onClick={() => createAndPair.mutate()} disabled={createAndPair.isPending}>
+              Criar e conciliar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
