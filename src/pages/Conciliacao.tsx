@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft } from "lucide-react";
+import { parseOfx, type ParsedOfxTx } from "@/lib/parseOfx";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
@@ -53,15 +54,67 @@ export default function Conciliacao() {
     },
   });
 
-  // Upload CSV handler
+  // Upload PDF/OFX handler
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const ext = file.name.toLowerCase().split(".").pop();
 
-    const text = await file.text();
-    const lines = text.split("\n").filter((l) => l.trim());
-    if (lines.length < 2) {
-      toast.error("Arquivo vazio ou inválido");
+    if (ext !== "ofx" && ext !== "pdf") {
+      toast.error("Formato inválido. Envie um extrato em PDF ou OFX.");
+      e.target.value = "";
+      return;
+    }
+
+    let transactions: ParsedOfxTx[] = [];
+
+    try {
+      if (ext === "ofx") {
+        const text = await file.text();
+        transactions = parseOfx(text);
+        if (transactions.length === 0) {
+          toast.error("Nenhuma transação encontrada no OFX.");
+          e.target.value = "";
+          return;
+        }
+      } else {
+        // PDF -> edge function (AI)
+        const toastId = toast.loading("Lendo PDF do extrato com IA, pode levar alguns segundos...");
+        const buf = await file.arrayBuffer();
+        // base64 encode
+        let binary = "";
+        const bytes = new Uint8Array(buf);
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+        }
+        const fileBase64 = btoa(binary);
+
+        const { data, error } = await supabase.functions.invoke("parse-bank-statement-pdf", {
+          body: { fileBase64, fileName: file.name },
+        });
+        toast.dismiss(toastId);
+
+        if (error) {
+          toast.error(`Erro ao processar PDF: ${error.message}`);
+          e.target.value = "";
+          return;
+        }
+        if (data?.error) {
+          toast.error(data.error);
+          e.target.value = "";
+          return;
+        }
+        transactions = (data?.transactions ?? []) as ParsedOfxTx[];
+        if (transactions.length === 0) {
+          toast.error("Nenhuma transação reconhecida no PDF.");
+          e.target.value = "";
+          return;
+        }
+      }
+    } catch (err: any) {
+      toast.error(`Erro ao ler arquivo: ${err.message ?? err}`);
+      e.target.value = "";
       return;
     }
 
@@ -69,7 +122,7 @@ export default function Conciliacao() {
     const { data: batch, error: batchError } = await supabase.from("import_batches").insert({
       file_name: file.name,
       source_kind: "extrato_bancario",
-      row_count: lines.length - 1,
+      row_count: transactions.length,
       imported_by: user?.id,
       status: "processando" as const,
     }).select().single();
@@ -79,44 +132,24 @@ export default function Conciliacao() {
       return;
     }
 
-    const headers = lines[0].split(";").map((h) => h.trim().toLowerCase());
     let successCount = 0;
     const errors: string[] = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(";").map((c) => c.trim());
-      if (cols.length < 3) continue;
-
+    for (let i = 0; i < transactions.length; i++) {
+      const t = transactions[i];
       try {
-        const dateIdx = headers.findIndex((h) => h.includes("data"));
-        const descIdx = headers.findIndex((h) => h.includes("descri") || h.includes("hist"));
-        const valueIdx = headers.findIndex((h) => h.includes("valor") || h.includes("amount"));
-
-        const rawDate = cols[dateIdx >= 0 ? dateIdx : 0];
-        const desc = cols[descIdx >= 0 ? descIdx : 1];
-        const rawValue = cols[valueIdx >= 0 ? valueIdx : 2];
-        const amount = Number(rawValue.replace(/[^\d.,-]/g, "").replace(",", "."));
-
-        // Parse date (try dd/mm/yyyy)
-        let parsedDate = rawDate;
-        if (rawDate.includes("/")) {
-          const [d, m, y] = rawDate.split("/");
-          parsedDate = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-        }
-
         const { error } = await supabase.from("bank_statement_entries").insert({
-          transaction_date: parsedDate,
-          description: desc,
-          amount: Math.abs(amount),
-          direction: amount >= 0 ? "entrada" : "saida",
+          transaction_date: t.date,
+          description: t.description,
+          amount: t.amount,
+          direction: t.direction,
           import_batch_id: batch.id,
-          raw_payload: { line: i, raw: lines[i] },
+          raw_payload: { source: ext, index: i, raw: (t as any).raw ?? null },
         });
-
         if (error) throw error;
         successCount++;
       } catch (err: any) {
-        errors.push(`Linha ${i}: ${err.message}`);
+        errors.push(`Transação ${i + 1}: ${err.message}`);
       }
     }
 
@@ -128,7 +161,7 @@ export default function Conciliacao() {
       error_log: errors.length > 0 ? errors : null,
     }).eq("id", batch.id);
 
-    toast.success(`Importação concluída: ${successCount} linhas importadas${errors.length > 0 ? `, ${errors.length} erros` : ""}`);
+    toast.success(`Importação concluída: ${successCount} transações${errors.length > 0 ? `, ${errors.length} erros` : ""}`);
     queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
     e.target.value = "";
   }, [user, queryClient]);
@@ -220,9 +253,10 @@ export default function Conciliacao() {
           </Button>
           <label className="cursor-pointer">
             <Button variant="outline" asChild>
-              <span><Upload className="h-4 w-4 mr-2" /> Upload Extrato</span>
+              <span><Upload className="h-4 w-4 mr-2" /> Upload Extrato (PDF ou OFX)</span>
             </Button>
-            <input type="file" accept=".csv,.xlsx" className="hidden" onChange={handleUpload} />
+            <input type="file" accept=".ofx,.pdf,application/pdf" className="hidden" onChange={handleUpload} />
+
           </label>
           <Button onClick={() => suggestMatches.mutate()} disabled={suggestMatches.isPending}>
             <Link2 className="h-4 w-4 mr-2" /> Sugerir Conciliações
