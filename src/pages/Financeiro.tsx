@@ -71,14 +71,23 @@ export default function Financeiro() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const exportCSV = () => {
+  const exportXLSX = () => {
     const headers = ["Data", "Negócio", "Conta Mov.", "Descrição", "Fornecedor/Cliente", "Entrada", "Saída", "Status", "Origem"];
-    const rows = entries.map((e) => [e.entry_date, e.business_unit, e.movement_account, e.movement_description, e.counterparty_name, e.amount_in, e.amount_out, e.conciliation_status, e.source_type]);
-    const csv = [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "movimentacao_financeira.csv"; a.click();
+    const rows = entries.map((e) => [
+      e.entry_date,
+      e.business_unit,
+      e.movement_account,
+      e.movement_description,
+      e.counterparty_name,
+      Number(e.amount_in || 0),
+      Number(e.amount_out || 0),
+      e.conciliation_status,
+      e.source_type,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Movimentação");
+    XLSX.writeFile(wb, "movimentacao_financeira.xlsx");
   };
 
   const conciliated = entries.filter((e) => e.conciliation_status === "conciliado");
