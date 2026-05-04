@@ -18,6 +18,7 @@ const Operacao = lazy(() => import("./pages/Operacao"));
 const Gestao = lazy(() => import("./pages/Gestao"));
 const BI = lazy(() => import("./pages/BI"));
 const Admin = lazy(() => import("./pages/Admin"));
+const ApiKeys = lazy(() => import("./pages/admin/ApiKeys"));
 const AceitarProposta = lazy(() => import("./pages/AceitarProposta"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -70,6 +71,7 @@ const App = () => (
                 <Route path="/gestao" element={<Gestao />} />
                 <Route path="/bi" element={<BI />} />
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+                <Route path="/admin/api-keys" element={<AdminRoute><ApiKeys /></AdminRoute>} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
