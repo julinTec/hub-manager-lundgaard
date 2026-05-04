@@ -246,6 +246,69 @@ export default function Conciliacao() {
     },
   });
 
+  // Edit / delete state
+  const [editingEntry, setEditingEntry] = useState<BankStatementEntry | null>(null);
+  const [editForm, setEditForm] = useState({ transaction_date: "", description: "", direction: "entrada", amount: "0.00" });
+  const [deletingEntry, setDeletingEntry] = useState<BankStatementEntry | null>(null);
+
+  const openEdit = (s: any) => {
+    setEditingEntry(s);
+    setEditForm({
+      transaction_date: s.transaction_date ?? "",
+      description: s.description ?? "",
+      direction: s.direction ?? "entrada",
+      amount: Number(s.amount ?? 0).toFixed(2),
+    });
+  };
+
+  const updateEntry = useMutation({
+    mutationFn: async () => {
+      if (!editingEntry) throw new Error("Sem lançamento selecionado");
+      const { error } = await supabase
+        .from("bank_statement_entries")
+        .update({
+          transaction_date: editForm.transaction_date,
+          description: editForm.description,
+          direction: editForm.direction,
+          amount: Number(editForm.amount),
+        })
+        .eq("id", editingEntry.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento atualizado");
+      setEditingEntry(null);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+    },
+    onError: (err: any) => toast.error(`Erro ao atualizar: ${err.message ?? err}`),
+  });
+
+  const deleteEntry = useMutation({
+    mutationFn: async (entry: BankStatementEntry) => {
+      if (entry.conciliation_status === "conciliado") {
+        throw new Error("Lançamento conciliado. Rejeite a conciliação antes de excluir.");
+      }
+      // Remove related matches first
+      const { error: mErr } = await supabase
+        .from("conciliation_matches")
+        .delete()
+        .eq("bank_statement_entry_id", entry.id);
+      if (mErr) throw mErr;
+      const { error } = await supabase.from("bank_statement_entries").delete().eq("id", entry.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lançamento excluído");
+      setDeletingEntry(null);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+      queryClient.invalidateQueries({ queryKey: ["conciliation-matches"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message ?? "Erro ao excluir");
+      setDeletingEntry(null);
+    },
+  });
+
   const conciliadoCount = statements.filter((s) => s.conciliation_status === "conciliado").length;
   const pendenteCount = statements.filter((s) => s.conciliation_status === "pendente").length;
   const totalEntradas = statements.filter((s) => s.direction === "entrada").reduce((s, e) => s + Number(e.amount), 0);
