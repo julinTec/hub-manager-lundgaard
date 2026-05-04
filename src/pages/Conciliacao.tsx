@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Upload, CheckCircle, XCircle, Link2, ArrowLeftRight, Search, ArrowLeft } from "lucide-react";
+import { parseOfx, type ParsedOfxTx } from "@/lib/parseOfx";
 
 const statusColors: Record<string, string> = {
   pendente: "bg-warning/20 text-warning border-warning/30",
