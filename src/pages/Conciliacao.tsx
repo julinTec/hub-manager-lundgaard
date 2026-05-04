@@ -420,11 +420,12 @@ export default function Conciliacao() {
               <TableHead>Direção</TableHead>
               <TableHead className="text-right">Valor</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {statements.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum extrato importado. Faça upload de um arquivo CSV.</TableCell></TableRow>
             ) : statements.filter((s) => !search || s.description?.toLowerCase().includes(search.toLowerCase())).map((s) => (
               <TableRow key={s.id}>
                 <TableCell>{s.transaction_date}</TableCell>
@@ -438,11 +439,82 @@ export default function Conciliacao() {
                 <TableCell>
                   <Badge variant="outline" className={statusColors[s.conciliation_status] || ""}>{s.conciliation_status}</Badge>
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="Editar">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setDeletingEntry(s as BankStatementEntry)} className="text-destructive" title="Excluir">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingEntry} onOpenChange={(o) => !o && setEditingEntry(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar lançamento do extrato</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-date">Data</Label>
+              <Input id="edit-date" type="date" value={editForm.transaction_date} onChange={(e) => setEditForm((f) => ({ ...f, transaction_date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-desc">Descrição</Label>
+              <Input id="edit-desc" value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Direção</Label>
+              <Select value={editForm.direction} onValueChange={(v) => setEditForm((f) => ({ ...f, direction: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entrada">Entrada</SelectItem>
+                  <SelectItem value="saida">Saída</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <CurrencyInputBRL value={editForm.amount} onChange={(v) => setEditForm((f) => ({ ...f, amount: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingEntry(null)}>Cancelar</Button>
+            <Button onClick={() => updateEntry.mutate()} disabled={updateEntry.isPending}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deletingEntry} onOpenChange={(o) => !o && setDeletingEntry(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação remove permanentemente o lançamento do extrato e quaisquer sugestões de conciliação relacionadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (deletingEntry) deleteEntry.mutate(deletingEntry);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
