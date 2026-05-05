@@ -382,7 +382,8 @@ serve(async (req) => {
       );
     }
 
-    // Nada funcionou — retorna erro amigável (preserva o status original quando possível)
+    // Nada funcionou — retorna erro amigável como 200 para o frontend poder
+    // tratar o fallback sem o supabase-js transformar em FunctionHttpError.
     const aiStatus = aiResult.ok ? 422 : aiResult.status;
     let userMsg = "Não foi possível ler o extrato. Tente exportar como OFX/CSV.";
     if (aiStatus === 402) {
@@ -394,10 +395,13 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         error: userMsg,
+        fallback: true,
+        source: "manual",
+        transactions: [],
         ai_error: aiResult.ok ? null : aiResult.message,
         manual_error: manualError,
       }),
-      { status: aiStatus === 402 || aiStatus === 429 ? aiStatus : 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
     console.error("parse-bank-statement-pdf error:", e);
