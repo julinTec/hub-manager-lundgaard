@@ -244,9 +244,13 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   // pdfjs-serverless é o build do pdfjs-dist sem dependência de canvas
   // nativo, próprio para edge runtimes. Lida com xref comprimido (que faz
   // o unpdf quebrar com "Invalid PDF structure").
-  const { getDocument }: any = await import(
+  const mod: any = await import(
     "https://esm.sh/pdfjs-serverless@0.5.0?target=denonext"
   );
+  const getDocument = mod.getDocument ?? mod.default?.getDocument;
+  if (typeof getDocument !== "function") {
+    throw new Error("pdfjs-serverless: getDocument not found. Keys: " + Object.keys(mod).join(","));
+  }
 
   const loadingTask = getDocument({
     data: bytes,
