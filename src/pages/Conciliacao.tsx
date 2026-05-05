@@ -120,13 +120,15 @@ export default function Conciliacao() {
           return;
         }
         if (data?.error) {
-          toast.error(data.error || "Não foi possível ler o PDF. Envie o extrato em OFX.");
+          toast.error(data.error);
           e.target.value = "";
           return;
         }
         transactions = (data?.transactions ?? []) as ParsedOfxTx[];
         if (transactions.length === 0) {
-          toast.error("Nenhuma transação reconhecida no PDF. Tente exportar como OFX/CSV.");
+          toast.error(
+            "Nenhuma transação reconhecida no PDF. Pode ser um extrato escaneado (imagem) ou um layout não suportado. Tente exportar como OFX/CSV.",
+          );
           e.target.value = "";
           return;
         }
