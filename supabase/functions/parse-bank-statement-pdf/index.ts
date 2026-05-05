@@ -205,12 +205,51 @@ function dedupe(txs: Tx[]): Tx[] {
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const { extractText, getDocumentProxy } = await import(
-    "https://esm.sh/unpdf@0.12.1?target=denonext"
+  // pdfjs-dist legacy build funciona no Deno edge runtime e lida com xref
+  // comprimido (que faz o unpdf quebrar com "Invalid PDF structure").
+  const pdfjs: any = await import(
+    "https://esm.sh/pdfjs-dist@4.7.76/legacy/build/pdf.mjs?target=denonext"
   );
-  const pdf = await getDocumentProxy(bytes);
-  const { text } = await extractText(pdf, { mergePages: true });
-  return Array.isArray(text) ? text.join("\n") : String(text ?? "");
+  try {
+    pdfjs.GlobalWorkerOptions.workerSrc = "";
+  } catch { /* ignore */ }
+
+  const loadingTask = pdfjs.getDocument({
+    data: bytes,
+    useSystemFonts: true,
+    isEvalSupported: false,
+    disableFontFace: true,
+    useWorker: false,
+  });
+  const pdf = await loadingTask.promise;
+
+  const pages: string[] = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // Agrupa items por coordenada Y para reconstruir linhas reais.
+    const byY = new Map<number, { x: number; str: string }[]>();
+    for (const it of content.items as any[]) {
+      if (typeof it.str !== "string" || !it.transform) continue;
+      const y = Math.round(it.transform[5]);
+      const x = it.transform[4];
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y)!.push({ x, str: it.str });
+    }
+    const lines = [...byY.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([, items]) =>
+        items
+          .sort((a, b) => a.x - b.x)
+          .map((i) => i.str)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      )
+      .filter(Boolean);
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
 }
 
 function parseManually(text: string): Tx[] {
