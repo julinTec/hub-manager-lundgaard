@@ -110,12 +110,17 @@ export default function Conciliacao() {
         toast.dismiss(toastId);
 
         if (error) {
-          toast.error(`Erro ao processar PDF: ${error.message}`);
+          const isAiCreditError = error.message.includes("402") || error.message.toLowerCase().includes("créditos de ia");
+          toast.error(
+            isAiCreditError
+              ? "Créditos de IA esgotados e o PDF não pôde ser lido em modo manual. Envie o extrato em OFX."
+              : `Erro ao processar PDF: ${error.message}`,
+          );
           e.target.value = "";
           return;
         }
         if (data?.error) {
-          toast.error(data.error);
+          toast.error(data.error || "Não foi possível ler o PDF. Envie o extrato em OFX.");
           e.target.value = "";
           return;
         }
