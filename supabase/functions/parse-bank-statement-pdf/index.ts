@@ -169,9 +169,9 @@ function parseBradesco(text: string): Tx[] {
 function parseGeneric(text: string): Tx[] {
   const out: Tx[] = [];
   const lines = text.split(/\r?\n/);
-  const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([\d\.]+,\d{2})\s*$/;
-  const debitKeywords = /(d[eé]bito|saida|saída|pagamento|tarifa|imposto|iof|tx\.|compra|saque|ted enviado|pix enviado|estorno|debito autom)/i;
-  const creditKeywords = /(cr[eé]dito|entrada|recebimento|deposito|depósito|ted recebido|pix recebido|transferencia recebida|salário)/i;
+  const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+(-?[\d\.]+,\d{2}-?)\s*$/;
+  const debitKeywords = /(d[eé]bito|saida|saída|pagamento|pagto|tarifa|imposto|iof|tx\.|compra|saque|ted enviado|pix enviado|enviado|estorno|debito autom|d[eé]bito autom|boleto pago|cobranca|cobrança|fatura|anuidade)/i;
+  const creditKeywords = /(cr[eé]dito|entrada|recebimento|recebido|deposito|depósito|ted recebido|pix recebido|transferencia recebida|transfer[eê]ncia recebida|sal[aá]rio|rendimento|estorno cred)/i;
 
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, " ").trim();
@@ -180,14 +180,50 @@ function parseGeneric(text: string): Tx[] {
     if (!m) continue;
     const iso = ddmmyyyyToISO(m[1]);
     if (!iso) continue;
-    const amount = brToNumber(m[3]);
+    const rawVal = m[3];
+    const isNegative = rawVal.startsWith("-") || rawVal.endsWith("-");
+    const amount = brToNumber(rawVal.replace(/-/g, ""));
     if (!isFinite(amount) || amount <= 0 || amount > 1e9) continue;
     const description = m[2].replace(/\s{2,}/g, " ").trim().slice(0, 250);
     if (!description) continue;
     let direction: "entrada" | "saida" = "entrada";
-    if (debitKeywords.test(description)) direction = "saida";
+    if (isNegative) direction = "saida";
+    else if (debitKeywords.test(description)) direction = "saida";
     else if (creditKeywords.test(description)) direction = "entrada";
     out.push({ date: iso, description, amount, direction });
+  }
+  return out;
+}
+
+// Último recurso: qualquer linha com data + texto + valor.
+function parseLastResort(text: string): Tx[] {
+  const out: Tx[] = [];
+  const lines = text.split(/\r?\n/);
+  let lastDate: string | null = null;
+  const dateRe = /(\d{2}\/\d{2}\/\d{4})/;
+  const valRe = /(-?[\d\.]+,\d{2}-?)/g;
+  const debitKeywords = /(d[eé]bito|pagto|pagamento|tarifa|iof|imposto|compra|saque|enviado|boleto|fatura)/i;
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (!line || shouldIgnoreLine(line)) continue;
+    const dm = line.match(dateRe);
+    if (dm) lastDate = ddmmyyyyToISO(dm[1]);
+    if (!lastDate) continue;
+    const vals = [...line.matchAll(valRe)].map((m) => m[1]);
+    if (vals.length === 0) continue;
+    const candidate = vals.length >= 2 ? vals[vals.length - 2] : vals[0];
+    const isNegative = candidate.startsWith("-") || candidate.endsWith("-");
+    const amount = brToNumber(candidate.replace(/-/g, ""));
+    if (!isFinite(amount) || amount <= 0 || amount > 1e9) continue;
+    const firstValIdx = line.indexOf(candidate);
+    const startIdx = dm ? dm.index! + dm[0].length : 0;
+    let description = line.slice(startIdx, firstValIdx).replace(/\s{2,}/g, " ").trim().slice(0, 250);
+    if (!description) description = line.slice(0, firstValIdx).trim().slice(0, 250);
+    if (!description) continue;
+    let direction: "entrada" | "saida" = "entrada";
+    if (isNegative || debitKeywords.test(description)) direction = "saida";
+    out.push({ date: lastDate, description, amount, direction });
   }
   return out;
 }
@@ -205,12 +241,49 @@ function dedupe(txs: Tx[]): Tx[] {
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const { extractText, getDocumentProxy } = await import(
-    "https://esm.sh/unpdf@0.12.1?target=denonext"
+  // pdfjs-serverless é o build do pdfjs-dist sem dependência de canvas
+  // nativo, próprio para edge runtimes. Lida com xref comprimido (que faz
+  // o unpdf quebrar com "Invalid PDF structure").
+  const { resolvePDFJS }: any = await import(
+    "https://esm.sh/pdfjs-serverless@0.5.0?target=denonext"
   );
-  const pdf = await getDocumentProxy(bytes);
-  const { text } = await extractText(pdf, { mergePages: true });
-  return Array.isArray(text) ? text.join("\n") : String(text ?? "");
+  const { getDocument } = await resolvePDFJS();
+
+  const loadingTask = getDocument({
+    data: bytes,
+    useSystemFonts: true,
+    isEvalSupported: false,
+    disableFontFace: true,
+  });
+  const pdf = await loadingTask.promise;
+
+  const pages: string[] = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // Agrupa items por coordenada Y para reconstruir linhas reais.
+    const byY = new Map<number, { x: number; str: string }[]>();
+    for (const it of content.items as any[]) {
+      if (typeof it.str !== "string" || !it.transform) continue;
+      const y = Math.round(it.transform[5]);
+      const x = it.transform[4];
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y)!.push({ x, str: it.str });
+    }
+    const lines = [...byY.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([, items]) =>
+        items
+          .sort((a, b) => a.x - b.x)
+          .map((i) => i.str)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      )
+      .filter(Boolean);
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
 }
 
 function parseManually(text: string): Tx[] {
@@ -218,9 +291,12 @@ function parseManually(text: string): Tx[] {
   try { candidates.push(parseBancoDoBrasil(text)); } catch { /* ignore */ }
   try { candidates.push(parseBradesco(text)); } catch { /* ignore */ }
   try { candidates.push(parseGeneric(text)); } catch { /* ignore */ }
-  // Escolhe o detector que retornou mais transações
   candidates.sort((a, b) => b.length - a.length);
-  const best = candidates[0] ?? [];
+  let best = candidates[0] ?? [];
+  // Se nenhum detector específico achou nada, tenta o último recurso.
+  if (best.length === 0) {
+    try { best = parseLastResort(text); } catch { /* ignore */ }
+  }
   return dedupe(best);
 }
 

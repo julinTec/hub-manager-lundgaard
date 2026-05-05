@@ -1,105 +1,104 @@
-## Objetivo
+## Diagnóstico do erro
 
-Manter a IA como **primeira opção** para extrair lançamentos do PDF do extrato. Quando a IA falhar (especialmente erros 402 — créditos esgotados — ou 429 — rate limit), aplicar um **parser manual em texto** dentro da própria edge function, lendo o PDF como texto e extraindo as transações via regex. O usuário continua subindo o mesmo PDF, sem etapas adicionais.
+Os logs da edge function mostram exatamente o que está acontecendo:
 
-## Análise dos dois extratos anexados
-
-Os PDFs analisados representam dois layouts comuns no Brasil — a base do parser cobre ambos:
-
-**1. Banco do Brasil (`08._Agosto_2022.pdf`)**
-- Colunas: `Dt. balancete | Dt. movimento | Ag. origem | Lote | Histórico | Documento | Valor R$ | Saldo`
-- Valor traz sufixo `D` (débito) ou `C` (crédito): ex. `93,00 D`, `742,49 C`
-- Linhas de saldo (`Saldo Anterior`, `S A L D O`) devem ser ignoradas
-- Datas no formato `DD/MM/YYYY`
-
-**2. Bradesco (`Mai.pdf`)**
-- Colunas: `Data | Histórico | Docto. | Crédito (R$) | Débito (R$) | Saldo (R$)`
-- Crédito e débito em colunas separadas (uma das duas vem vazia por linha)
-- Data pode estar vazia em linhas seguintes (herdar a última data preenchida)
-- Linhas `COD. LANC. 0`, `Total`, e cabeçalhos repetidos por página devem ser ignorados
-- Histórico pode ocupar 2 linhas (descrição + REM/DES)
-
-## Estratégia
-
-### Edge function `parse-bank-statement-pdf`
-
-1. **Tentar IA primeiro** (fluxo atual mantido — Gemini 2.5 Flash via Lovable AI).
-2. **Em caso de falha 402 / 429 / 5xx ou resposta inválida**, cair para o **parser manual**:
-   - Extrair texto do PDF usando `unpdf` (já usado em outra edge function do projeto).
-   - Rodar uma cadeia de detectores de layout em ordem:
-     - **Detector BB**: regex que reconhece linhas `DD/MM/YYYY ... <histórico> ... <valor>,<centavos> [DC] ...`
-     - **Detector Bradesco**: linhas com 1 data + histórico + valor em coluna de crédito/débito (deduzido pela posição/sinal)
-     - **Detector genérico**: data + descrição + valor numérico no fim da linha; usa palavras-chave (`PIX`, `TED`, `DOC`, `Tarifa`, `Saldo`) para classificar e ignorar.
-   - Retornar o mesmo formato `{ transactions: [{ date, description, amount, direction }] }` da IA.
-3. Resposta inclui um campo `source: "ai" | "manual"` e, no caso manual, um aviso para o frontend.
-
-### Frontend `Conciliacao.tsx`
-
-- Tratar a resposta do edge function:
-  - Se `source === "manual"`, mostrar `toast.warning("IA indisponível — extrato lido em modo manual. Confira os lançamentos antes de conciliar.")`.
-  - Se mesmo o manual retornar lista vazia, mostrar `toast.error` com instrução de tentar OFX/CSV (já suportados via `parseOfx`).
-- Nenhuma mudança de UI estrutural — só feedback ao usuário.
-
-## Detalhes técnicos
-
-### Arquivo: `supabase/functions/parse-bank-statement-pdf/index.ts`
-
-```ts
-// Pseudo-estrutura
-const aiResult = await tryAi(fileBase64, fileName); // já existe
-if (aiResult.ok) return json({ transactions: aiResult.transactions, source: "ai" });
-
-// Fallback
-const text = await extractPdfText(bytes); // import unpdf
-const transactions = parseManually(text);
-return json({ transactions, source: "manual", ai_error: aiResult.errorCode });
+```
+AI gateway error 402 {"type":"payment_required","message":"Not enough credits"}
+Falling back to manual parser. AI status: 402
+Manual parser failed Error: Invalid PDF structure.
+  at unpdf@0.12.1/denonext/pdfjs.mjs ...
 ```
 
-### `parseManually(text)` — heurísticas
+Ou seja:
 
-```text
-Linha BB:     ^(\d{2}/\d{2}/\d{4})\s+.*?\s+([\d\.]+,\d{2})\s+([DC])\b
-Linha Bradesco: data opcional + histórico + 1 valor numérico no fim
-                + decisão D/C pela posição (penúltima coluna = débito)
-```
+1. A IA retorna **402 (sem créditos)** — esperado, é o gatilho do fallback.
+2. O fallback manual **tenta extrair o texto com `unpdf@0.12.1`** e falha com `InvalidPDFException: Invalid PDF structure`.
+3. Como o parser manual não produziu nenhuma transação, a edge function devolve a mensagem de erro "Créditos de IA esgotados e não foi possível ler o PDF automaticamente…".
 
-- Normalizar valor: `"1.234,56"` → `1234.56`.
-- Direction: `D` → `saida`, `C` → `entrada`.
-- Filtrar linhas: `Saldo`, `S A L D O`, `Total`, `COD. LANC. 0`, cabeçalhos repetidos.
-- Datas vazias herdam a última data válida (Bradesco).
-- Limite de segurança: descartar valores absurdos (>10⁹) ou descrição vazia.
+O problema **não é o seu PDF** nem o regex — é a biblioteca `unpdf` que está engasgando com a estrutura do PDF (provavelmente cross-reference em formato comprimido, comum em PDFs gerados pelos bancos). Ela aborta antes mesmo do nosso regex rodar.
 
-### `Conciliacao.tsx` — ajuste mínimo
+## O que fazer
 
-Onde hoje há:
+### 1. Trocar a extração de texto por uma rota mais robusta
+
+Substituir `unpdf` pelo `pdfjs-dist` legacy build, que aceita PDFs com xref comprimido e é o engine de referência (o `unpdf` é um wrapper em cima dele, mas a versão fixada está com bug nesses extratos):
+
 ```ts
-const { data, error } = await supabase.functions.invoke("parse-bank-statement-pdf", { body: { fileBase64, fileName } });
-```
+// nova função extractPdfText
+import * as pdfjs from "https://esm.sh/pdfjs-dist@4.7.76/legacy/build/pdf.mjs?target=denonext";
 
-Adicionar:
-```ts
-if (data?.source === "manual") {
-  toast.warning("Extrato lido em modo manual (IA indisponível). Revise os lançamentos.");
-}
-if (!data?.transactions?.length) {
-  toast.error("Não foi possível ler o extrato. Tente exportar como OFX/CSV.");
-  return;
+async function extractPdfText(bytes: Uint8Array): Promise<string> {
+  // desabilita worker no edge runtime
+  // @ts-ignore
+  pdfjs.GlobalWorkerOptions.workerSrc = "";
+  const pdf = await pdfjs.getDocument({
+    data: bytes,
+    useSystemFonts: true,
+    isEvalSupported: false,
+    disableFontFace: true,
+  }).promise;
+
+  const pages: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // Reconstrói linhas usando a coordenada Y (transform[5]) — pdfjs solta
+    // os itens em ordem de leitura mas sem \n; agrupar por Y mantém a noção
+    // de "linha" do extrato.
+    const byY = new Map<number, { x: number; str: string }[]>();
+    for (const it of content.items as any[]) {
+      const y = Math.round(it.transform[5]);
+      const x = it.transform[4];
+      if (!byY.has(y)) byY.set(y, []);
+      byY.get(y)!.push({ x, str: it.str });
+    }
+    const lines = [...byY.entries()]
+      .sort((a, b) => b[0] - a[0]) // y maior = topo da página
+      .map(([, items]) =>
+        items.sort((a, b) => a.x - b.x).map((i) => i.str).join(" ").replace(/\s+/g, " ").trim(),
+      )
+      .filter(Boolean);
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
 }
 ```
 
-## Limitações conhecidas
+Por que muda o jogo:
+- `pdfjs-dist` lida nativamente com xref comprimido (causa do `Invalid PDF structure` do unpdf).
+- Reconstruir linha por coordenada Y devolve os lançamentos em **linhas reais**, exatamente o que os regex do BB/Bradesco esperam (hoje o `mergePages: true` do unpdf concatena tudo numa salada).
 
-- Parser manual é **best-effort**: pode perder linhas em layouts muito incomuns (Itaú, Caixa, Santander têm formatações diferentes). Cobre BB e Bradesco com boa precisão, e tenta o detector genérico nos demais.
-- PDFs **escaneados** (imagem) continuam exigindo IA — sem texto extraível, o fallback retorna lista vazia e o frontend instrui a usar OFX/CSV.
-- Não substitui a IA na riqueza de descrição (a IA limpa melhor histórico fragmentado em múltiplas linhas).
+### 2. Endurecer o parser manual
 
-## Out of scope
+Com texto bem formatado em mãos, ajustar o `parseManually` em `supabase/functions/parse-bank-statement-pdf/index.ts`:
 
-- Treinar parsers específicos para Itaú, Caixa, Santander (pode vir depois conforme PDFs reais aparecerem).
-- OCR de PDF escaneado (não cabe em edge function leve).
+- **Banco do Brasil**: reduzir o regex para `^(\d{2}\/\d{2}\/\d{4}).+?([\d\.]+,\d{2})\s*([DC])\b` e ignorar a primeira data (Dt. balancete) usando `lastIndex` — pega tanto entradas (`C`) quanto saídas (`D`).
+- **Bradesco**: como agora as colunas mantêm a ordem por X, decidir crédito vs débito pela posição do valor na linha (índice do match no texto): se o valor da movimentação está mais à esquerda que o saldo e antes do meio da linha após o histórico, é crédito; senão débito. Como fallback, manter a lógica atual de "se há 2 valores antes do saldo, primeiro = crédito, segundo = débito".
+- **Genérico**: manter, mas com lista ampliada de palavras-chave (`recebido`, `enviado`, `compra`, `boleto`, `transf` etc.) e tolerar valor com sinal negativo (`-1.234,56` → saída).
+- **Fallback de último recurso**: se nenhum dos três detectores acertou, varrer todas as linhas com regex `data + qualquer texto + valor` e classificar tudo como entrada (com aviso no toast pedindo revisão). Melhor importar lançamentos com direção possivelmente errada do que travar.
+
+### 3. Garantir que o frontend não trate fallback como erro fatal
+
+`src/pages/Conciliacao.tsx` já está correto (lê `data?.error` e `data?.source`), só preciso ajustar a mensagem do erro final para refletir o novo cenário: quando o PDF for ilegível mesmo após o pdfjs, sugerir OFX/CSV. Sem mudança estrutural.
+
+### 4. QA
+
+- Reimplantar a edge function.
+- Testar com `supabase--curl_edge_functions` enviando os dois PDFs anexados (BB agosto/2022 e Bradesco maio) em base64 e validar que `transactions.length > 0` e cobre tanto entradas quanto saídas.
+- Conferir os logs: não deve mais aparecer `Invalid PDF structure`.
+
+## Limitações que permanecem
+
+- **PDF escaneado (imagem)** continua exigindo IA — não há texto para extrair. Nesse caso o usuário precisa OFX/CSV. Vou deixar essa mensagem explícita no toast.
+- Bancos não cobertos (Itaú, Caixa, Santander) caem no detector genérico; a direção pode sair invertida em casos sem palavra-chave clara — daí o aviso "Revise antes de conciliar".
+
+## Arquivos a alterar
+
+- `supabase/functions/parse-bank-statement-pdf/index.ts` — substituir `extractPdfText` (pdfjs-dist + reconstrução por Y), ajustar regex BB/Bradesco/Genérico, adicionar fallback de último recurso.
+- `src/pages/Conciliacao.tsx` — pequeno ajuste na mensagem de erro final (sem mudança de fluxo).
+
+## Fora do escopo
+
+- OCR de PDF escaneado.
+- Parsers dedicados para Itaú/Caixa/Santander (entram conforme aparecerem PDFs reais).
 - Mudança no layout da tela de conciliação.
-
-## Arquivos alterados
-
-- `supabase/functions/parse-bank-statement-pdf/index.ts` — adicionar extração de texto com `unpdf` e função `parseManually` como fallback.
-- `src/pages/Conciliacao.tsx` — toasts informativos sobre a fonte (`ai` vs `manual`) e fallback final OFX/CSV.
