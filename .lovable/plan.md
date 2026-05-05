@@ -1,62 +1,105 @@
-## Redesign da Conciliação no estilo Conta Azul (lado a lado)
+## Objetivo
 
-Hoje a página de Conciliação tem uma tabela única do extrato + um card separado de "Sugestões". Vou trocar por um layout pareado em duas colunas, inspirado na imagem do Conta Azul.
+Manter a IA como **primeira opção** para extrair lançamentos do PDF do extrato. Quando a IA falhar (especialmente erros 402 — créditos esgotados — ou 429 — rate limit), aplicar um **parser manual em texto** dentro da própria edge function, lendo o PDF como texto e extraindo as transações via regex. O usuário continua subindo o mesmo PDF, sem etapas adicionais.
 
-### Layout proposto
+## Análise dos dois extratos anexados
 
-```text
-┌──────────────────────────────────────────┬──────────────────────────────────────────┐
-│  🏦 Lançamentos do banco (extrato)        │  💼 Lançamentos internos (sistema)        │
-├──────────────────────────────────────────┼──────────────────────────────────────────┤
-│ ┌──────────────────────────┐             │ ┌──────────────────────────┐            │
-│ │ 10/01  Quinta            │             │ │ Descrição                │            │
-│ │ Transf. enviada -4.000,00│  [Conciliar]│ │ Fornecedor / Categoria   │            │
-│ │ [✏️] [🗑️] [Ignorar]       │             │ │ Valor                    │            │
-│ └──────────────────────────┘             │ └──────────────────────────┘            │
-│                                           │                                          │
-│ ┌──────────────────────────┐             │ ┌──────────────────────────┐            │
-│ │ 14/01  Cheque comp.      │  [Conciliar]│ │ (sem candidato — buscar) │            │
-│ └──────────────────────────┘             │ └──────────────────────────┘            │
-└──────────────────────────────────────────┴──────────────────────────────────────────┘
+Os PDFs analisados representam dois layouts comuns no Brasil — a base do parser cobre ambos:
+
+**1. Banco do Brasil (`08._Agosto_2022.pdf`)**
+- Colunas: `Dt. balancete | Dt. movimento | Ag. origem | Lote | Histórico | Documento | Valor R$ | Saldo`
+- Valor traz sufixo `D` (débito) ou `C` (crédito): ex. `93,00 D`, `742,49 C`
+- Linhas de saldo (`Saldo Anterior`, `S A L D O`) devem ser ignoradas
+- Datas no formato `DD/MM/YYYY`
+
+**2. Bradesco (`Mai.pdf`)**
+- Colunas: `Data | Histórico | Docto. | Crédito (R$) | Débito (R$) | Saldo (R$)`
+- Crédito e débito em colunas separadas (uma das duas vem vazia por linha)
+- Data pode estar vazia em linhas seguintes (herdar a última data preenchida)
+- Linhas `COD. LANC. 0`, `Total`, e cabeçalhos repetidos por página devem ser ignorados
+- Histórico pode ocupar 2 linhas (descrição + REM/DES)
+
+## Estratégia
+
+### Edge function `parse-bank-statement-pdf`
+
+1. **Tentar IA primeiro** (fluxo atual mantido — Gemini 2.5 Flash via Lovable AI).
+2. **Em caso de falha 402 / 429 / 5xx ou resposta inválida**, cair para o **parser manual**:
+   - Extrair texto do PDF usando `unpdf` (já usado em outra edge function do projeto).
+   - Rodar uma cadeia de detectores de layout em ordem:
+     - **Detector BB**: regex que reconhece linhas `DD/MM/YYYY ... <histórico> ... <valor>,<centavos> [DC] ...`
+     - **Detector Bradesco**: linhas com 1 data + histórico + valor em coluna de crédito/débito (deduzido pela posição/sinal)
+     - **Detector genérico**: data + descrição + valor numérico no fim da linha; usa palavras-chave (`PIX`, `TED`, `DOC`, `Tarifa`, `Saldo`) para classificar e ignorar.
+   - Retornar o mesmo formato `{ transactions: [{ date, description, amount, direction }] }` da IA.
+3. Resposta inclui um campo `source: "ai" | "manual"` e, no caso manual, um aviso para o frontend.
+
+### Frontend `Conciliacao.tsx`
+
+- Tratar a resposta do edge function:
+  - Se `source === "manual"`, mostrar `toast.warning("IA indisponível — extrato lido em modo manual. Confira os lançamentos antes de conciliar.")`.
+  - Se mesmo o manual retornar lista vazia, mostrar `toast.error` com instrução de tentar OFX/CSV (já suportados via `parseOfx`).
+- Nenhuma mudança de UI estrutural — só feedback ao usuário.
+
+## Detalhes técnicos
+
+### Arquivo: `supabase/functions/parse-bank-statement-pdf/index.ts`
+
+```ts
+// Pseudo-estrutura
+const aiResult = await tryAi(fileBase64, fileName); // já existe
+if (aiResult.ok) return json({ transactions: aiResult.transactions, source: "ai" });
+
+// Fallback
+const text = await extractPdfText(bytes); // import unpdf
+const transactions = parseManually(text);
+return json({ transactions, source: "manual", ai_error: aiResult.errorCode });
 ```
 
-Cada **linha** representa um par: card do extrato à esquerda, botão **Conciliar** ao centro, card do lançamento interno correspondente à direita.
+### `parseManually(text)` — heurísticas
 
-### Comportamento
+```text
+Linha BB:     ^(\d{2}/\d{2}/\d{4})\s+.*?\s+([\d\.]+,\d{2})\s+([DC])\b
+Linha Bradesco: data opcional + histórico + 1 valor numérico no fim
+                + decisão D/C pela posição (penúltima coluna = débito)
+```
 
-1. **Carregamento inicial**: para cada `bank_statement_entry` ainda não conciliado, tentar encontrar o melhor candidato em `financial_entries` pendentes usando a heurística atual (mesmo valor + data próxima ±5 dias + similaridade de descrição). Se houver match já em `conciliation_matches` com status `sugerido`, usar esse pareamento.
+- Normalizar valor: `"1.234,56"` → `1234.56`.
+- Direction: `D` → `saida`, `C` → `entrada`.
+- Filtrar linhas: `Saldo`, `S A L D O`, `Total`, `COD. LANC. 0`, cabeçalhos repetidos.
+- Datas vazias herdam a última data válida (Bradesco).
+- Limite de segurança: descartar valores absurdos (>10⁹) ou descrição vazia.
 
-2. **Card esquerdo (extrato)** mostra: data, dia da semana, descrição, valor (verde se entrada / vermelho se saída), badge de status. Ações: ✏️ editar, 🗑️ excluir, **Ignorar** (marca como `divergente` ou cria registro de "ignorado").
+### `Conciliacao.tsx` — ajuste mínimo
 
-3. **Card direito (lançamento interno)** tem 3 estados:
-   - **Match sugerido**: mostra dados do `financial_entry` + botão "Trocar" (abre busca) e "Editar".
-   - **Sem candidato**: caixa vazia com botão **"Buscar lançamento"** (abre `Dialog` com lista pesquisável de `financial_entries` pendentes para o usuário escolher manualmente) e **"Novo lançamento"** (abre formulário rápido para criar um `financial_entry` na hora — data, descrição, fornecedor, valor, conta, negócio — e já parear).
-   - **Conciliado**: ambos os cards ficam com fundo verde claro e o botão central vira "Desfazer".
+Onde hoje há:
+```ts
+const { data, error } = await supabase.functions.invoke("parse-bank-statement-pdf", { body: { fileBase64, fileName } });
+```
 
-4. **Botão central "Conciliar"**: só fica habilitado quando há um candidato escolhido. Ao clicar:
-   - cria/atualiza `conciliation_matches` com `status = 'confirmado'`
-   - atualiza `bank_statement_entries.conciliation_status = 'conciliado'`
-   - atualiza `financial_entries.conciliation_status = 'conciliado'`
+Adicionar:
+```ts
+if (data?.source === "manual") {
+  toast.warning("Extrato lido em modo manual (IA indisponível). Revise os lançamentos.");
+}
+if (!data?.transactions?.length) {
+  toast.error("Não foi possível ler o extrato. Tente exportar como OFX/CSV.");
+  return;
+}
+```
 
-5. **Filtros no topo da coluna esquerda**: busca por descrição, filtro por status (Todos / Pendentes / Conciliados / Ignorados) e por direção (Entradas / Saídas). Os cards de resumo (Conciliado, Pendente, Sugestões, Entradas, Saídas) e o upload de extrato continuam acima.
+## Limitações conhecidas
 
-6. **Responsivo**: em telas < 1024px as duas colunas viram empilhadas (extrato em cima, candidato logo abaixo, com uma divisória discreta), preservando o pareamento visual.
+- Parser manual é **best-effort**: pode perder linhas em layouts muito incomuns (Itaú, Caixa, Santander têm formatações diferentes). Cobre BB e Bradesco com boa precisão, e tenta o detector genérico nos demais.
+- PDFs **escaneados** (imagem) continuam exigindo IA — sem texto extraível, o fallback retorna lista vazia e o frontend instrui a usar OFX/CSV.
+- Não substitui a IA na riqueza de descrição (a IA limpa melhor histórico fragmentado em múltiplas linhas).
 
-### Mudanças técnicas
+## Out of scope
 
-- **`src/pages/Conciliacao.tsx`** reescrita da seção da "Tabela do extrato" e "Sugestões". O upload, mutações de match (confirmar / rejeitar), edição e exclusão de linhas já existentes serão reutilizados.
-- Novo componente local `PairRow` (no mesmo arquivo) que renderiza a linha pareada.
-- Novo `Dialog` "Buscar lançamento interno" com `Input` de busca + lista virtual simples filtrando `financial_entries` por valor/descrição/data.
-- Novo `Dialog` "Novo lançamento financeiro" — reutiliza estrutura de form do `Financeiro.tsx` (campos básicos: `entry_date`, `business_unit`, `movement_account`, `movement_description`, `counterparty_name`, `amount_in`/`amount_out` deduzido do `direction` do extrato).
-- A função de pareamento automático passa a rodar **na hora de carregar** (em memória, sem persistir) para já mostrar os candidatos sugeridos no lado direito; só persiste em `conciliation_matches` quando o usuário clica em **Conciliar**.
+- Treinar parsers específicos para Itaú, Caixa, Santander (pode vir depois conforme PDFs reais aparecerem).
+- OCR de PDF escaneado (não cabe em edge function leve).
+- Mudança no layout da tela de conciliação.
 
-### Sem mudanças
+## Arquivos alterados
 
-- Banco de dados, RLS, edge functions: nenhuma alteração.
-- Outras páginas: nenhuma alteração.
-
-### O que fica de fora desta etapa (podemos fazer depois se quiser)
-
-- Drag & drop entre cards (Conta Azul não usa, e adiciona complexidade).
-- Categorização automática por IA (regras sugeridas de categoria/centro de custo).
-- Conciliação 1-para-N (um lançamento bancário casando com vários internos somando o mesmo valor).
+- `supabase/functions/parse-bank-statement-pdf/index.ts` — adicionar extração de texto com `unpdf` e função `parseManually` como fallback.
+- `src/pages/Conciliacao.tsx` — toasts informativos sobre a fonte (`ai` vs `manual`) e fallback final OFX/CSV.
