@@ -293,9 +293,12 @@ function parseManually(text: string): Tx[] {
   try { candidates.push(parseBancoDoBrasil(text)); } catch { /* ignore */ }
   try { candidates.push(parseBradesco(text)); } catch { /* ignore */ }
   try { candidates.push(parseGeneric(text)); } catch { /* ignore */ }
-  // Escolhe o detector que retornou mais transações
   candidates.sort((a, b) => b.length - a.length);
-  const best = candidates[0] ?? [];
+  let best = candidates[0] ?? [];
+  // Se nenhum detector específico achou nada, tenta o último recurso.
+  if (best.length === 0) {
+    try { best = parseLastResort(text); } catch { /* ignore */ }
+  }
   return dedupe(best);
 }
 
