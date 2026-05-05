@@ -169,9 +169,9 @@ function parseBradesco(text: string): Tx[] {
 function parseGeneric(text: string): Tx[] {
   const out: Tx[] = [];
   const lines = text.split(/\r?\n/);
-  const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([\d\.]+,\d{2})\s*$/;
-  const debitKeywords = /(d[eé]bito|saida|saída|pagamento|tarifa|imposto|iof|tx\.|compra|saque|ted enviado|pix enviado|estorno|debito autom)/i;
-  const creditKeywords = /(cr[eé]dito|entrada|recebimento|deposito|depósito|ted recebido|pix recebido|transferencia recebida|salário)/i;
+  const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+(-?[\d\.]+,\d{2}-?)\s*$/;
+  const debitKeywords = /(d[eé]bito|saida|saída|pagamento|pagto|tarifa|imposto|iof|tx\.|compra|saque|ted enviado|pix enviado|enviado|estorno|debito autom|d[eé]bito autom|boleto pago|cobranca|cobrança|fatura|anuidade)/i;
+  const creditKeywords = /(cr[eé]dito|entrada|recebimento|recebido|deposito|depósito|ted recebido|pix recebido|transferencia recebida|transfer[eê]ncia recebida|sal[aá]rio|rendimento|estorno cred)/i;
 
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, " ").trim();
@@ -180,14 +180,50 @@ function parseGeneric(text: string): Tx[] {
     if (!m) continue;
     const iso = ddmmyyyyToISO(m[1]);
     if (!iso) continue;
-    const amount = brToNumber(m[3]);
+    const rawVal = m[3];
+    const isNegative = rawVal.startsWith("-") || rawVal.endsWith("-");
+    const amount = brToNumber(rawVal.replace(/-/g, ""));
     if (!isFinite(amount) || amount <= 0 || amount > 1e9) continue;
     const description = m[2].replace(/\s{2,}/g, " ").trim().slice(0, 250);
     if (!description) continue;
     let direction: "entrada" | "saida" = "entrada";
-    if (debitKeywords.test(description)) direction = "saida";
+    if (isNegative) direction = "saida";
+    else if (debitKeywords.test(description)) direction = "saida";
     else if (creditKeywords.test(description)) direction = "entrada";
     out.push({ date: iso, description, amount, direction });
+  }
+  return out;
+}
+
+// Último recurso: qualquer linha com data + texto + valor.
+function parseLastResort(text: string): Tx[] {
+  const out: Tx[] = [];
+  const lines = text.split(/\r?\n/);
+  let lastDate: string | null = null;
+  const dateRe = /(\d{2}\/\d{2}\/\d{4})/;
+  const valRe = /(-?[\d\.]+,\d{2}-?)/g;
+  const debitKeywords = /(d[eé]bito|pagto|pagamento|tarifa|iof|imposto|compra|saque|enviado|boleto|fatura)/i;
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (!line || shouldIgnoreLine(line)) continue;
+    const dm = line.match(dateRe);
+    if (dm) lastDate = ddmmyyyyToISO(dm[1]);
+    if (!lastDate) continue;
+    const vals = [...line.matchAll(valRe)].map((m) => m[1]);
+    if (vals.length === 0) continue;
+    const candidate = vals.length >= 2 ? vals[vals.length - 2] : vals[0];
+    const isNegative = candidate.startsWith("-") || candidate.endsWith("-");
+    const amount = brToNumber(candidate.replace(/-/g, ""));
+    if (!isFinite(amount) || amount <= 0 || amount > 1e9) continue;
+    const firstValIdx = line.indexOf(candidate);
+    const startIdx = dm ? dm.index! + dm[0].length : 0;
+    let description = line.slice(startIdx, firstValIdx).replace(/\s{2,}/g, " ").trim().slice(0, 250);
+    if (!description) description = line.slice(0, firstValIdx).trim().slice(0, 250);
+    if (!description) continue;
+    let direction: "entrada" | "saida" = "entrada";
+    if (isNegative || debitKeywords.test(description)) direction = "saida";
+    out.push({ date: lastDate, description, amount, direction });
   }
   return out;
 }
