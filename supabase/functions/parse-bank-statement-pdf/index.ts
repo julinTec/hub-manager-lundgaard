@@ -241,21 +241,18 @@ function dedupe(txs: Tx[]): Tx[] {
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  // pdfjs-dist legacy build funciona no Deno edge runtime e lida com xref
-  // comprimido (que faz o unpdf quebrar com "Invalid PDF structure").
-  const pdfjs: any = await import(
-    "https://esm.sh/pdfjs-dist@4.7.76/legacy/build/pdf.mjs?target=denonext"
+  // pdfjs-serverless é o build do pdfjs-dist sem dependência de canvas
+  // nativo, próprio para edge runtimes. Lida com xref comprimido (que faz
+  // o unpdf quebrar com "Invalid PDF structure").
+  const { getDocument }: any = await import(
+    "https://esm.sh/pdfjs-serverless@0.5.0?target=denonext"
   );
-  try {
-    pdfjs.GlobalWorkerOptions.workerSrc = "";
-  } catch { /* ignore */ }
 
-  const loadingTask = pdfjs.getDocument({
+  const loadingTask = getDocument({
     data: bytes,
     useSystemFonts: true,
     isEvalSupported: false,
     disableFontFace: true,
-    useWorker: false,
   });
   const pdf = await loadingTask.promise;
 
