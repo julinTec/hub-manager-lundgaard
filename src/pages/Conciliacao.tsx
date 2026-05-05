@@ -121,9 +121,12 @@ export default function Conciliacao() {
         }
         transactions = (data?.transactions ?? []) as ParsedOfxTx[];
         if (transactions.length === 0) {
-          toast.error("Nenhuma transação reconhecida no PDF.");
+          toast.error("Nenhuma transação reconhecida no PDF. Tente exportar como OFX/CSV.");
           e.target.value = "";
           return;
+        }
+        if (data?.source === "manual") {
+          toast.warning("Extrato lido em modo manual (IA indisponível). Revise os lançamentos antes de conciliar.");
         }
       }
     } catch (err: any) {
