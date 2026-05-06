@@ -1,25 +1,41 @@
-## Funcionalidade: Excluir todos os lançamentos do extrato de uma vez
+Você tem razão: pare de procurar esse botão. Nesta interface do Lovable Cloud ele não está disponível para você, e a orientação anterior ficou ruim porque apontou para algo que não aparece no seu projeto.
 
-Adicionar um botão **"Excluir todos"** no cabeçalho do card "Conciliação por par", mantendo a exclusão individual existente.
+Vou seguir um caminho alternativo, sem depender do botão Connect nem da connection string do banco antigo.
 
-### Comportamento
+Plano direto para resolver a migração:
 
-- O botão fica ao lado do filtro de status, com ícone `Trash2` e variant destrutiva discreta (`variant="outline"` + texto vermelho).
-- **Respeita o filtro ativo**: se o usuário selecionou "Pendentes", exclui só os pendentes visíveis; se "Todos", exclui todos os lançamentos do extrato carregados (até 200 do limit atual).
-- **Bloqueio de segurança**: lançamentos com status `conciliado` são automaticamente excluídos da seleção (mesma regra da exclusão unitária, que pede para rejeitar antes). Se a seleção final for vazia, mostra aviso.
-- **Confirmação obrigatória**: AlertDialog mostrando a quantidade exata que será apagada (ex: "Excluir 47 lançamentos? Esta ação é permanente.").
-- Remove primeiro os `conciliation_matches` relacionados (via `.in('bank_statement_entry_id', ids)`), depois os `bank_statement_entries` (via `.in('id', ids)`) — mesma ordem da exclusão unitária.
-- Toast de sucesso com a contagem; invalida queries `bank-statements` e `conciliation-matches`.
+1. Exportar os dados deste projeto antigo usando acesso interno de leitura
+   - Já confirmei que o banco antigo tem:
+     - 2 usuários em auth.users
+     - 2 identidades em auth.identities
+     - 2 profiles
+     - 2 user_roles
+     - 3 clients
+     - 3 devis
+     - 3 services
+     - 5 financial_entries
+     - 6 import_batches
+     - 6 audit_logs
+     - outras tabelas vazias
 
-### Mudanças de código
+2. Gerar um pacote de migração baixável
+   - Vou criar arquivos em `/mnt/documents/`, por exemplo:
+     - `migration_public_data.sql` com os inserts das tabelas públicas
+     - `migration_auth_users.sql` com os inserts dos 2 usuários e identidades, preservando IDs e hashes de senha quando possível
+     - opcionalmente um `migration_bundle.zip` juntando tudo
 
-**Arquivo único:** `src/pages/Conciliacao.tsx`
+3. Preservar relacionamentos
+   - Os inserts serão ordenados para respeitar dependências entre tabelas.
+   - IDs UUID serão mantidos.
+   - Roles, profiles, devis, clients, services e dados financeiros serão migrados com os mesmos relacionamentos.
 
-1. Novo estado `confirmDeleteAll: boolean` e mutation `deleteAllEntries` (recebe `ids: string[]`).
-2. Botão "Excluir todos" no `CardHeader` da seção "Conciliação por par", visível apenas quando `filteredStatements.length > 0`.
-3. Novo `<AlertDialog>` de confirmação reutilizando o padrão visual do dialog de exclusão unitária existente.
+4. Entregar instrução curta para importar no projeto novo
+   - Vou te entregar comandos prontos para rodar no banco novo.
+   - Se o outro projeto/IA tiver a connection string do banco novo, ela só precisa executar os SQLs gerados.
 
-### Fora de escopo
+5. Aviso importante sobre auth
+   - A exportação dos usuários com senhas originais depende de conseguirmos ler as colunas necessárias de `auth.users` e `auth.identities`.
+   - Eu já consegui consultar `auth.users` ao menos para contagem e estrutura, então o próximo passo é gerar o SQL completo.
+   - Se alguma coluna sensível for bloqueada pela plataforma, eu gero o restante da migração e te aviso exatamente qual parte ficou bloqueada, sem te mandar procurar botão inexistente.
 
-- Exclusão dos `financial_entries` (lançamentos internos) — só extrato bancário, conforme pedido.
-- Mudanças no backend / RLS — políticas atuais já permitem `DELETE` para admin/financeiro.
+Depois que você aprovar, eu gero os arquivos de migração diretamente aqui para você baixar e usar no projeto novo.
