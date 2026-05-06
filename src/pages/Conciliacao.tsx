@@ -319,6 +319,35 @@ export default function Conciliacao() {
     },
   });
 
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+
+  const deleteAllEntries = useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (ids.length === 0) throw new Error("Nenhum lançamento para excluir.");
+      const { error: mErr } = await supabase
+        .from("conciliation_matches")
+        .delete()
+        .in("bank_statement_entry_id", ids);
+      if (mErr) throw mErr;
+      const { error } = await supabase
+        .from("bank_statement_entries")
+        .delete()
+        .in("id", ids);
+      if (error) throw error;
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} lançamento(s) excluído(s)`);
+      setConfirmDeleteAll(false);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+      queryClient.invalidateQueries({ queryKey: ["conciliation-matches"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message ?? "Erro ao excluir lançamentos");
+      setConfirmDeleteAll(false);
+    },
+  });
+
   // ---- Paired layout: filters, helpers, mutations ----
   const [pairFilter, setPairFilter] = useState<string>("todos");
   const [searchTarget, setSearchTarget] = useState<any>(null);
