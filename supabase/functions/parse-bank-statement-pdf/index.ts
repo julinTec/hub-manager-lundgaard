@@ -602,8 +602,8 @@ serve(async (req) => {
     let manualError: string | null = null;
     try {
       const bytes = b64ToBytes(fileBase64);
-      const text = await extractPdfText(bytes);
-      manualTxs = parseManually(text);
+      const pages = await extractPdfPages(bytes);
+      manualTxs = parseManually(pages);
     } catch (e) {
       console.error("Manual parser failed", e);
       manualError = e instanceof Error ? e.message : String(e);
