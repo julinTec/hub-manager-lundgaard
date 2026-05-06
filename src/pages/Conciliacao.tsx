@@ -785,6 +785,44 @@ export default function Conciliacao() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Delete-all confirmation */}
+      <AlertDialog open={confirmDeleteAll} onOpenChange={(o) => !o && setConfirmDeleteAll(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir todos os lançamentos visíveis?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const elig = filteredStatements.filter((s) => s.conciliation_status !== "conciliado");
+                const skipped = filteredStatements.length - elig.length;
+                return (
+                  <>
+                    Esta ação remove permanentemente <strong>{elig.length}</strong> lançamento(s) do extrato e quaisquer sugestões de conciliação relacionadas.
+                    {skipped > 0 && (
+                      <> {skipped} lançamento(s) já conciliado(s) serão preservados — rejeite a conciliação antes para excluí-los.</>
+                    )}
+                  </>
+                );
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                const ids = filteredStatements
+                  .filter((s) => s.conciliation_status !== "conciliado")
+                  .map((s) => s.id);
+                deleteAllEntries.mutate(ids);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Search financial entry dialog */}
       <Dialog open={!!searchTarget} onOpenChange={(o) => !o && setSearchTarget(null)}>
         <DialogContent className="max-w-2xl">
