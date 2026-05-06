@@ -319,6 +319,35 @@ export default function Conciliacao() {
     },
   });
 
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+
+  const deleteAllEntries = useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (ids.length === 0) throw new Error("Nenhum lançamento para excluir.");
+      const { error: mErr } = await supabase
+        .from("conciliation_matches")
+        .delete()
+        .in("bank_statement_entry_id", ids);
+      if (mErr) throw mErr;
+      const { error } = await supabase
+        .from("bank_statement_entries")
+        .delete()
+        .in("id", ids);
+      if (error) throw error;
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} lançamento(s) excluído(s)`);
+      setConfirmDeleteAll(false);
+      queryClient.invalidateQueries({ queryKey: ["bank-statements"] });
+      queryClient.invalidateQueries({ queryKey: ["conciliation-matches"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message ?? "Erro ao excluir lançamentos");
+      setConfirmDeleteAll(false);
+    },
+  });
+
   // ---- Paired layout: filters, helpers, mutations ----
   const [pairFilter, setPairFilter] = useState<string>("todos");
   const [searchTarget, setSearchTarget] = useState<any>(null);
@@ -551,6 +580,16 @@ export default function Conciliacao() {
                 <SelectItem value="divergente">Ignorados</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={filteredStatements.filter((s) => s.conciliation_status !== "conciliado").length === 0}
+              title="Excluir todos os lançamentos visíveis (exceto conciliados)"
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Excluir todos
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -741,6 +780,44 @@ export default function Conciliacao() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete-all confirmation */}
+      <AlertDialog open={confirmDeleteAll} onOpenChange={(o) => !o && setConfirmDeleteAll(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir todos os lançamentos visíveis?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const elig = filteredStatements.filter((s) => s.conciliation_status !== "conciliado");
+                const skipped = filteredStatements.length - elig.length;
+                return (
+                  <>
+                    Esta ação remove permanentemente <strong>{elig.length}</strong> lançamento(s) do extrato e quaisquer sugestões de conciliação relacionadas.
+                    {skipped > 0 && (
+                      <> {skipped} lançamento(s) já conciliado(s) serão preservados — rejeite a conciliação antes para excluí-los.</>
+                    )}
+                  </>
+                );
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                const ids = filteredStatements
+                  .filter((s) => s.conciliation_status !== "conciliado")
+                  .map((s) => s.id);
+                deleteAllEntries.mutate(ids);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir todos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
