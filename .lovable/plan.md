@@ -1,104 +1,64 @@
-## Diagnóstico do erro
+## Problema confirmado
 
-Os logs da edge function mostram exatamente o que está acontecendo:
+No extrato Bradesco em PDF (formato de tabela com colunas `Data | Histórico | Docto. | Crédito (R$) | Débito (R$) | Saldo (R$)`), o parser manual atual está:
 
-```
-AI gateway error 402 {"type":"payment_required","message":"Not enough credits"}
-Falling back to manual parser. AI status: 402
-Manual parser failed Error: Invalid PDF structure.
-  at unpdf@0.12.1/denonext/pdfjs.mjs ...
-```
+1. **Pegando o "Docto." (número do documento) como descrição** — por isso aparecem números como "1629047", "1639065" no lugar de "PIX QR CODE ESTATIC" / "TRANSFERENCIA PIX".
+2. **Classificando tudo como entrada (receita)** — porque a heurística atual ("primeiro valor = crédito, segundo = débito") quebra: quando só há valor na coluna Débito, o parser vê `[debito, saldo]` e trata o débito como crédito.
+3. **Ignorando linhas sem data** — a maioria das linhas do Bradesco tem a data preenchida só na primeira ocorrência do dia (data herdada).
 
-Ou seja:
+### Causa raiz técnica
 
-1. A IA retorna **402 (sem créditos)** — esperado, é o gatilho do fallback.
-2. O fallback manual **tenta extrair o texto com `unpdf@0.12.1`** e falha com `InvalidPDFException: Invalid PDF structure`.
-3. Como o parser manual não produziu nenhuma transação, a edge function devolve a mensagem de erro "Créditos de IA esgotados e não foi possível ler o PDF automaticamente…".
+O parser atual (`parseBradesco`) trabalha com a linha já achatada em string. Mas o `extractPdfText` já agrupa items por coordenada Y — temos acesso à coordenada **X** de cada texto, que é exatamente o que distingue a coluna Crédito da coluna Débito visualmente. Estamos jogando essa informação fora.
 
-O problema **não é o seu PDF** nem o regex — é a biblioteca `unpdf` que está engasgando com a estrutura do PDF (provavelmente cross-reference em formato comprimido, comum em PDFs gerados pelos bancos). Ela aborta antes mesmo do nosso regex rodar.
+## Plano de correção
 
-## O que fazer
+### 1. Mudar `extractPdfText` para preservar coordenadas X por página
 
-### 1. Trocar a extração de texto por uma rota mais robusta
-
-Substituir `unpdf` pelo `pdfjs-dist` legacy build, que aceita PDFs com xref comprimido e é o engine de referência (o `unpdf` é um wrapper em cima dele, mas a versão fixada está com bug nesses extratos):
+Em vez de retornar uma string `string`, retornar uma estrutura por página com items posicionados:
 
 ```ts
-// nova função extractPdfText
-import * as pdfjs from "https://esm.sh/pdfjs-dist@4.7.76/legacy/build/pdf.mjs?target=denonext";
-
-async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  // desabilita worker no edge runtime
-  // @ts-ignore
-  pdfjs.GlobalWorkerOptions.workerSrc = "";
-  const pdf = await pdfjs.getDocument({
-    data: bytes,
-    useSystemFonts: true,
-    isEvalSupported: false,
-    disableFontFace: true,
-  }).promise;
-
-  const pages: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    // Reconstrói linhas usando a coordenada Y (transform[5]) — pdfjs solta
-    // os itens em ordem de leitura mas sem \n; agrupar por Y mantém a noção
-    // de "linha" do extrato.
-    const byY = new Map<number, { x: number; str: string }[]>();
-    for (const it of content.items as any[]) {
-      const y = Math.round(it.transform[5]);
-      const x = it.transform[4];
-      if (!byY.has(y)) byY.set(y, []);
-      byY.get(y)!.push({ x, str: it.str });
-    }
-    const lines = [...byY.entries()]
-      .sort((a, b) => b[0] - a[0]) // y maior = topo da página
-      .map(([, items]) =>
-        items.sort((a, b) => a.x - b.x).map((i) => i.str).join(" ").replace(/\s+/g, " ").trim(),
-      )
-      .filter(Boolean);
-    pages.push(lines.join("\n"));
-  }
-  return pages.join("\n");
-}
+type PdfLine = { y: number; items: { x: number; str: string }[] };
+type PdfPage = { width: number; lines: PdfLine[] };
 ```
 
-Por que muda o jogo:
-- `pdfjs-dist` lida nativamente com xref comprimido (causa do `Invalid PDF structure` do unpdf).
-- Reconstruir linha por coordenada Y devolve os lançamentos em **linhas reais**, exatamente o que os regex do BB/Bradesco esperam (hoje o `mergePages: true` do unpdf concatena tudo numa salada).
+Manter uma função auxiliar `flattenPages(pages): string` para os parsers que ainda usam texto puro (BB, Generic, LastResort).
 
-### 2. Endurecer o parser manual
+### 2. Reescrever `parseBradesco` baseado em colunas (X)
 
-Com texto bem formatado em mãos, ajustar o `parseManually` em `supabase/functions/parse-bank-statement-pdf/index.ts`:
+Algoritmo:
 
-- **Banco do Brasil**: reduzir o regex para `^(\d{2}\/\d{2}\/\d{4}).+?([\d\.]+,\d{2})\s*([DC])\b` e ignorar a primeira data (Dt. balancete) usando `lastIndex` — pega tanto entradas (`C`) quanto saídas (`D`).
-- **Bradesco**: como agora as colunas mantêm a ordem por X, decidir crédito vs débito pela posição do valor na linha (índice do match no texto): se o valor da movimentação está mais à esquerda que o saldo e antes do meio da linha após o histórico, é crédito; senão débito. Como fallback, manter a lógica atual de "se há 2 valores antes do saldo, primeiro = crédito, segundo = débito".
-- **Genérico**: manter, mas com lista ampliada de palavras-chave (`recebido`, `enviado`, `compra`, `boleto`, `transf` etc.) e tolerar valor com sinal negativo (`-1.234,56` → saída).
-- **Fallback de último recurso**: se nenhum dos três detectores acertou, varrer todas as linhas com regex `data + qualquer texto + valor` e classificar tudo como entrada (com aviso no toast pedindo revisão). Melhor importar lançamentos com direção possivelmente errada do que travar.
+1. **Detectar cabeçalho** procurando a linha que contém `Histórico`, `Crédito`, `Débito`, `Saldo` (case-insensitive). Capturar o `x` central de cada uma dessas palavras → define limites de coluna `X_HIST`, `X_DOC`, `X_CRED`, `X_DEB`, `X_SALDO`.
+2. Para cada linha de dados:
+   - Pegar data se existir no início (X pequeno + match `dd/mm/yyyy`); senão herdar `lastDate`.
+   - Coletar **valores numéricos** (`/[\d\.]+,\d{2}/`) com seus X.
+   - Para cada valor, classificar pela coluna mais próxima (`X_CRED`, `X_DEB`, `X_SALDO`) usando `argmin(|x - col|)`.
+   - Se valor caiu em **CRED** → `entrada`; em **DEB** → `saida`; **SALDO** descartado.
+   - **Histórico** = todos os items de texto (não-numéricos, não-data) com `x < X_DOC` concatenados, limpos de `REM:`/`DES:` opcionalmente preservados.
+3. Suportar **linhas de continuação**: quando uma linha não tem nenhum valor numérico mas tem texto na coluna Histórico, anexar à descrição da última transação aberta (ex: a linha `REM: MADALENA VIANA MARTIN 02/05` é continuação de `PIX QR CODE ESTATIC`).
+4. Ignorar linhas com `RENTAB.INVEST` opcionalmente? Não — o usuário quer todos os lançamentos. Manter.
+5. Filtrar linhas de `SALDO ANTERIOR`, `SALDO DO DIA`, totais (já feito por `shouldIgnoreLine`).
 
-### 3. Garantir que o frontend não trate fallback como erro fatal
+### 3. Detecção de banco
 
-`src/pages/Conciliacao.tsx` já está correto (lê `data?.error` e `data?.source`), só preciso ajustar a mensagem do erro final para refletir o novo cenário: quando o PDF for ilegível mesmo após o pdfjs, sugerir OFX/CSV. Sem mudança estrutural.
+Antes de chamar parsers, identificar Bradesco pelo cabeçalho (`Crédito (R$)` + `Débito (R$)` + `Saldo (R$)` na mesma linha) e ir direto para `parseBradesco` posicional. Se não houver cabeçalho identificável, cair em BB → Generic → LastResort como hoje.
 
-### 4. QA
+### 4. Manter `parseBancoDoBrasil`, `parseGeneric`, `parseLastResort` como fallback
 
-- Reimplantar a edge function.
-- Testar com `supabase--curl_edge_functions` enviando os dois PDFs anexados (BB agosto/2022 e Bradesco maio) em base64 e validar que `transactions.length > 0` e cobre tanto entradas quanto saídas.
-- Conferir os logs: não deve mais aparecer `Invalid PDF structure`.
+Continuam recebendo texto plano via `flattenPages`. Sem mudanças funcionais.
 
-## Limitações que permanecem
+### 5. QA
 
-- **PDF escaneado (imagem)** continua exigindo IA — não há texto para extrair. Nesse caso o usuário precisa OFX/CSV. Vou deixar essa mensagem explícita no toast.
-- Bancos não cobertos (Itaú, Caixa, Santander) caem no detector genérico; a direção pode sair invertida em casos sem palavra-chave clara — daí o aviso "Revise antes de conciliar".
+- Testar com o PDF anexo do Bradesco: deve retornar `PIX QR CODE ESTATIC - REM: MADALENA VIANA MARTIN 02/05` como descrição, `direction: entrada`, `amount: 10.00` etc., e `TRANSFERENCIA PIX - DES: Kariny...` como `direction: saida`, `amount: 5428.50`.
+- Validar via `supabase--curl_edge_functions` enviando o PDF base64.
+- Garantir que parser BB ainda funciona (não regredir).
 
 ## Arquivos a alterar
 
-- `supabase/functions/parse-bank-statement-pdf/index.ts` — substituir `extractPdfText` (pdfjs-dist + reconstrução por Y), ajustar regex BB/Bradesco/Genérico, adicionar fallback de último recurso.
-- `src/pages/Conciliacao.tsx` — pequeno ajuste na mensagem de erro final (sem mudança de fluxo).
+- `supabase/functions/parse-bank-statement-pdf/index.ts` (única mudança).
+- Re-deploy da edge function.
 
-## Fora do escopo
+## Fora de escopo
 
-- OCR de PDF escaneado.
-- Parsers dedicados para Itaú/Caixa/Santander (entram conforme aparecerem PDFs reais).
-- Mudança no layout da tela de conciliação.
+- Mudanças no frontend (`Conciliacao.tsx`).
+- OCR de PDFs escaneados.
+- Parsers dedicados para Itaú/Caixa/Santander (continuam no Generic).
