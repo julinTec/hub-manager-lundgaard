@@ -240,10 +240,12 @@ function dedupe(txs: Tx[]): Tx[] {
   return out;
 }
 
-async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  // pdfjs-serverless é o build do pdfjs-dist sem dependência de canvas
-  // nativo, próprio para edge runtimes. Lida com xref comprimido (que faz
-  // o unpdf quebrar com "Invalid PDF structure").
+// ---------- Positional PDF extraction ----------
+type PdfItem = { x: number; str: string };
+type PdfLine = { y: number; items: PdfItem[]; text: string };
+type PdfPage = { lines: PdfLine[] };
+
+async function extractPdfPages(bytes: Uint8Array): Promise<PdfPage[]> {
   const { resolvePDFJS }: any = await import(
     "https://esm.sh/pdfjs-serverless@0.5.0?target=denonext"
   );
@@ -257,43 +259,204 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   });
   const pdf = await loadingTask.promise;
 
-  const pages: string[] = [];
+  const pages: PdfPage[] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    // Agrupa items por coordenada Y para reconstruir linhas reais.
-    const byY = new Map<number, { x: number; str: string }[]>();
+    const byY = new Map<number, PdfItem[]>();
     for (const it of content.items as any[]) {
       if (typeof it.str !== "string" || !it.transform) continue;
+      const s = it.str;
+      if (!s.trim()) continue;
       const y = Math.round(it.transform[5]);
       const x = it.transform[4];
       if (!byY.has(y)) byY.set(y, []);
-      byY.get(y)!.push({ x, str: it.str });
+      byY.get(y)!.push({ x, str: s });
     }
-    const lines = [...byY.entries()]
+    const lines: PdfLine[] = [...byY.entries()]
       .sort((a, b) => b[0] - a[0])
-      .map(([, items]) =>
-        items
-          .sort((a, b) => a.x - b.x)
-          .map((i) => i.str)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim(),
-      )
-      .filter(Boolean);
-    pages.push(lines.join("\n"));
+      .map(([y, items]) => {
+        items.sort((a, b) => a.x - b.x);
+        const text = items.map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+        return { y, items, text };
+      })
+      .filter((l) => l.text.length > 0);
+    pages.push({ lines });
   }
-  return pages.join("\n");
+  return pages;
 }
 
-function parseManually(text: string): Tx[] {
+function flattenPages(pages: PdfPage[]): string {
+  return pages.map((p) => p.lines.map((l) => l.text).join("\n")).join("\n");
+}
+
+// ---------- Bradesco positional parser (column-aware) ----------
+function parseBradescoPositional(pages: PdfPage[]): Tx[] {
+  const out: Tx[] = [];
+  const valRe = /^-?[\d\.]+,\d{2}-?$/;
+  const dateRe = /^(\d{2}\/\d{2}\/\d{4})$/;
+
+  for (const page of pages) {
+    // Procurar cabeçalho: linha que contém Histórico + Crédito + Débito + Saldo
+    let headerIdx = -1;
+    let cols: { hist: number; doc: number; cred: number; deb: number; saldo: number } | null = null;
+
+    for (let i = 0; i < page.lines.length; i++) {
+      const line = page.lines[i];
+      const lc = line.text.toLowerCase();
+      if (
+        lc.includes("hist") &&
+        lc.includes("cr") && lc.includes("d") &&
+        (lc.includes("saldo") || lc.includes("saldo"))
+      ) {
+        // Extrair X de cada coluna procurando palavras chave em items
+        const findX = (kw: string): number | null => {
+          for (const it of line.items) {
+            if (it.str.toLowerCase().includes(kw)) return it.x;
+          }
+          return null;
+        };
+        const xHist = findX("hist");
+        const xDoc = findX("docto") ?? findX("doc");
+        const xCred = findX("créd") ?? findX("cred");
+        const xDeb = findX("déb") ?? findX("deb") ?? findX("déb");
+        const xSaldo = findX("saldo");
+        if (xHist != null && xCred != null && xDeb != null && xSaldo != null) {
+          cols = {
+            hist: xHist,
+            doc: xDoc ?? (xHist + xCred) / 2,
+            cred: xCred,
+            deb: xDeb,
+            saldo: xSaldo,
+          };
+          headerIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (!cols || headerIdx < 0) continue;
+
+    let lastDate: string | null = null;
+    let pending: Tx | null = null; // transação atual aguardando linhas de continuação
+    const flush = () => {
+      if (pending) {
+        // limpa descrição
+        pending.description = pending.description.replace(/\s{2,}/g, " ").trim().slice(0, 250);
+        if (pending.description && pending.amount > 0) out.push(pending);
+        pending = null;
+      }
+    };
+
+    for (let i = headerIdx + 1; i < page.lines.length; i++) {
+      const line = page.lines[i];
+      if (shouldIgnoreLine(line.text)) { flush(); continue; }
+
+      // Separar items em texto vs valores numéricos
+      const valueItems: { x: number; raw: string; amount: number }[] = [];
+      const textItems: PdfItem[] = [];
+      let dateOnLine: string | null = null;
+
+      for (const it of line.items) {
+        const s = it.str.trim();
+        if (!s) continue;
+        const dm = s.match(dateRe);
+        if (dm) {
+          const iso = ddmmyyyyToISO(dm[1]);
+          if (iso) { dateOnLine = iso; continue; }
+        }
+        if (valRe.test(s)) {
+          const amt = brToNumber(s.replace(/-/g, ""));
+          if (isFinite(amt)) {
+            valueItems.push({ x: it.x, raw: s, amount: amt });
+            continue;
+          }
+        }
+        textItems.push(it);
+      }
+
+      if (dateOnLine) lastDate = dateOnLine;
+
+      // Histórico = items texto à esquerda da coluna Docto.
+      const histText = textItems
+        .filter((it) => it.x < cols!.doc - 5)
+        .map((it) => it.str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      // Classificar valores por proximidade de coluna
+      let credit = 0, debit = 0;
+      for (const v of valueItems) {
+        const dCred = Math.abs(v.x - cols.cred);
+        const dDeb = Math.abs(v.x - cols.deb);
+        const dSaldo = Math.abs(v.x - cols.saldo);
+        const min = Math.min(dCred, dDeb, dSaldo);
+        if (min === dSaldo) continue; // saldo descartado
+        if (min === dCred) credit = Math.max(credit, v.amount);
+        else if (min === dDeb) debit = Math.max(debit, v.amount);
+      }
+
+      const hasMovement = credit > 0 || debit > 0;
+
+      if (hasMovement) {
+        // Nova transação
+        flush();
+        if (!lastDate) continue;
+        const amount = debit > 0 ? debit : credit;
+        const direction: "entrada" | "saida" = debit > 0 ? "saida" : "entrada";
+        if (amount <= 0 || amount > 1e9) continue;
+        pending = {
+          date: lastDate,
+          description: histText || "Lançamento",
+          amount,
+          direction,
+        };
+      } else if (histText && pending) {
+        // Linha de continuação: anexar à descrição
+        pending.description += " " + histText;
+      }
+    }
+    flush();
+  }
+
+  return out;
+}
+
+function isBradescoLayout(pages: PdfPage[]): boolean {
+  for (const page of pages) {
+    for (const line of page.lines) {
+      const lc = line.text.toLowerCase();
+      if (
+        lc.includes("hist") &&
+        (lc.includes("créd") || lc.includes("cred")) &&
+        (lc.includes("déb") || lc.includes("deb")) &&
+        lc.includes("saldo")
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function parseManually(pages: PdfPage[]): Tx[] {
+  // 1) Tenta Bradesco posicional se cabeçalho de colunas detectado
+  if (isBradescoLayout(pages)) {
+    try {
+      const bx = parseBradescoPositional(pages);
+      if (bx.length > 0) return dedupe(bx);
+    } catch (e) { console.error("Bradesco positional failed", e); }
+  }
+
+  // 2) Fallback baseado em texto puro
+  const text = flattenPages(pages);
   const candidates: Tx[][] = [];
   try { candidates.push(parseBancoDoBrasil(text)); } catch { /* ignore */ }
   try { candidates.push(parseBradesco(text)); } catch { /* ignore */ }
   try { candidates.push(parseGeneric(text)); } catch { /* ignore */ }
   candidates.sort((a, b) => b.length - a.length);
   let best = candidates[0] ?? [];
-  // Se nenhum detector específico achou nada, tenta o último recurso.
   if (best.length === 0) {
     try { best = parseLastResort(text); } catch { /* ignore */ }
   }
