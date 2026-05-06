@@ -580,6 +580,16 @@ export default function Conciliacao() {
                 <SelectItem value="divergente">Ignorados</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={filteredStatements.filter((s) => s.conciliation_status !== "conciliado").length === 0}
+              title="Excluir todos os lançamentos visíveis (exceto conciliados)"
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Excluir todos
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
