@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import logoBanner from "@/assets/logo-banner.png";
+
 import {
   Sidebar,
   SidebarContent,
@@ -63,10 +63,10 @@ export function AppSidebar() {
         <div className="flex items-center justify-center">
           {collapsed ? (
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-              <span className="text-xs font-bold text-sidebar-primary-foreground">LJ</span>
+              <span className="text-xs font-bold text-sidebar-primary-foreground">HG</span>
             </div>
           ) : (
-            <img src={logoBanner} alt="Lundgaard Jensen" className="h-auto w-[160px]" />
+            <span className="text-lg font-display font-bold text-sidebar-foreground">Hub de Gestão</span>
           )}
         </div>
       </SidebarHeader>

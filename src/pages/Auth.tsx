@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import logo from "@/assets/logo.svg";
+
 
 export default function Auth() {
   const [email, setEmail] = useState("");
@@ -30,10 +30,7 @@ export default function Auth() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4">
-            <img src={logo} alt="Lundgaard Jensen" className="h-auto w-[200px]" />
-          </div>
-          <CardTitle className="font-display text-2xl">Lundgaard Hub</CardTitle>
+          <CardTitle className="font-display text-2xl">Hub de Gestão</CardTitle>
           <CardDescription>Faça login</CardDescription>
         </CardHeader>
         <CardContent>
